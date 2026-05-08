@@ -1,0 +1,168 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+enum SourceType {
+  rss
+  official_blog
+  news_site
+  research_feed
+  github_release
+  manual
+}
+
+enum RawArticleStatus {
+  fetched
+  embedded
+  clustered
+  summarized
+  pending_review
+  approved
+  rejected
+  published
+  fetch_failed
+}
+
+enum ReviewDecisionType {
+  approve
+  reject
+}
+
+enum FactCheckStatus {
+  verified
+  likely_true
+  partially_verified
+  unverified
+  disputed
+  low_quality
+}
+
+model Source {
+  id                   String       @id @default(uuid())
+  name                 String
+  url                  String       @unique
+  sourceType           SourceType   @default(rss)
+  category             String?
+  trustLevel           Int          @default(3)
+  enabled              Boolean      @default(true)
+  crawlIntervalMinutes Int          @default(60)
+  lastCrawledAt        DateTime?
+  lastSuccessAt        DateTime?
+  lastFailureAt        DateTime?
+  lastError            String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  rawArticles          RawArticle[]
+
+  @@index([enabled])
+  @@index([lastCrawledAt])
+}
+
+model RawArticle {
+  id               String             @id @default(uuid())
+  sourceId         String
+  source           Source             @relation(fields: [sourceId], references: [id])
+  originalUrl      String             @unique
+  canonicalUrl     String?
+  title            String
+  description      String?
+  content          String?
+  author           String?
+  publishedAt      DateTime?
+  fetchedAt        DateTime           @default(now())
+  imageUrl         String?
+  rawJson          Json?
+  embedding        Json?
+  status           RawArticleStatus   @default(fetched)
+  clusterMembers   ClusterMember[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([status])
+  @@index([publishedAt])
+  @@index([sourceId])
+}
+
+model ArticleCluster {
+  id              String           @id @default(uuid())
+  clusterTitle    String           @default("")
+  factCheckStatus FactCheckStatus  @default(unverified)
+  confidenceScore Float            @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  members         ClusterMember[]
+  summaries       Summary[]
+  reviews         ReviewDecision[]
+  published       PublishedArticle?
+
+  @@index([createdAt])
+  @@index([updatedAt])
+}
+
+model ClusterMember {
+  clusterId  String
+  articleId  String
+  cluster    ArticleCluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  article    RawArticle     @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@id([clusterId, articleId])
+  @@index([clusterId])
+  @@index([articleId])
+}
+
+model Summary {
+  id               String          @id @default(uuid())
+  articleClusterId String
+  cluster          ArticleCluster  @relation(fields: [articleClusterId], references: [id])
+  headline         String
+  summary          String
+  keywords         Json
+  imageUrl         String?
+  sourceUrl        String?
+  sourceName       String?
+  confidenceScore  Float?
+  factCheckStatus  FactCheckStatus @default(unverified)
+  version          Int             @default(1)
+  approvedForPublish Boolean       @default(false)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([articleClusterId])
+}
+
+model ReviewDecision {
+  id               String             @id @default(uuid())
+  articleClusterId String
+  cluster          ArticleCluster     @relation(fields: [articleClusterId], references: [id])
+  reviewerName     String?
+  decision         ReviewDecisionType
+  notes            String?
+  decidedAt        DateTime           @default(now())
+
+  @@index([articleClusterId])
+  @@index([decision])
+}
+
+model PublishedArticle {
+  id               String          @id @default(uuid())
+  articleClusterId String          @unique
+  cluster          ArticleCluster  @relation(fields: [articleClusterId], references: [id])
+  slug             String          @unique
+  headline         String
+  summary          String
+  imageUrl         String?
+  sourceUrl        String
+  sourceName       String?
+  confidenceScore  Float?
+  factCheckStatus  FactCheckStatus @default(unverified)
+  publishedAt      DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([slug])
+  @@index([publishedAt])
+}

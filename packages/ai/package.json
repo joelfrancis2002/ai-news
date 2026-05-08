@@ -1,0 +1,23 @@
+{
+  "name": "@ai-newsroom/ai",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/provider.ts",
+  "types": "./src/provider.ts",
+  "exports": {
+    ".": {
+      "types": "./src/provider.ts",
+      "import": "./src/provider.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ai-newsroom/shared": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
