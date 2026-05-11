@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "@sinclair/typebox";
 import { Prisma } from "@prisma/client";
-import { getQueueStats } from "@ai-newsroom/workers/queues";
+// import { getQueueStats } from "@ai-newsroom/workers/queues";
 import { getAdminUser, issueAuthToken, requireAuth } from "./auth.js";
 
 const ArticleStatusEnum = Type.Union([
@@ -456,7 +456,7 @@ function mapCluster(cluster: {
 }
 
 async function buildStats(prisma: FastifyPluginAsyncTypebox extends never ? never : any) {
-  const [articleGroups, clusterCount, sourceStats, latestReviews, queueStats] = await Promise.all([
+  const [articleGroups, clusterCount, sourceStats, latestReviews] = await Promise.all([
     prisma.rawArticle.groupBy({ by: ["status"], _count: { status: true } }),
     prisma.articleCluster.count(),
     prisma.source.findMany({
@@ -467,8 +467,16 @@ async function buildStats(prisma: FastifyPluginAsyncTypebox extends never ? neve
       orderBy: [{ articleClusterId: "asc" }, { decidedAt: "desc" }],
       select: { decision: true },
     }),
-    getQueueStats(),
+    // getQueueStats(), // Commented out for direct mode
   ]);
+
+  const queueStats = {
+    ingest: { waiting: 0, active: 0, completed: 0, failed: 0 },
+    embedding: { waiting: 0, active: 0, completed: 0, failed: 0 },
+    cluster: { waiting: 0, active: 0, completed: 0, failed: 0 },
+    summary: { waiting: 0, active: 0, completed: 0, failed: 0 },
+    publish: { waiting: 0, active: 0, completed: 0, failed: 0 },
+  };
 
   const baseCounts = {
     total: 0,
@@ -519,7 +527,7 @@ async function buildStats(prisma: FastifyPluginAsyncTypebox extends never ? neve
     },
     pipeline: {
       schedule: process.env.INGEST_CRON ?? "*/15 * * * *",
-      queueMode: "bullmq" as const,
+      queueMode: "direct" as const,
       queues: queueStats,
     },
   };

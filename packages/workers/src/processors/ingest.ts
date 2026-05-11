@@ -2,7 +2,7 @@ import Parser from "rss-parser";
 import axios from "axios";
 import { extract } from "@extractus/article-extractor";
 import { prisma } from "@ai-newsroom/database";
-import { getEmbeddingQueue } from "../queues.js";
+// import { getEmbeddingQueue } from "../queues.js";
 
 const rssParser = new Parser({
   timeout: 15000,
@@ -116,9 +116,10 @@ export async function processIngestJob(sourceId: string): Promise<void> {
     },
   });
 
-  await Promise.all(
-    insertedArticleIds.map((articleId) =>
-      getEmbeddingQueue().add("embed-article", { articleId }, { jobId: `embed:${articleId}` }),
-    ),
-  );
+  // In direct mode, embeddings are processed immediately after ingest
+  // await Promise.all(
+  //   insertedArticleIds.map((articleId) =>
+  //     getEmbeddingQueue().add("embed-article", { articleId }, { jobId: `embed:${articleId}` }),
+  //   ),
+  // );
 }

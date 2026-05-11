@@ -1,5 +1,5 @@
 import { prisma } from "@ai-newsroom/database";
-import { getSummaryQueue } from "../queues.js";
+// import { getSummaryQueue } from "../queues.js";
 import { cosineSimilarity } from "../lib/embedding.js";
 
 const EPSILON = 0.35;
@@ -141,10 +141,11 @@ export async function processClusterJob(): Promise<void> {
       },
     });
 
-    await getSummaryQueue().add(
-      "summarize-cluster",
-      { clusterId: cluster.id },
-      { jobId: `summary:${cluster.id}` },
-    );
+    // In direct mode, summaries are generated immediately after clustering
+    // await getSummaryQueue().add(
+    //   "summarize-cluster",
+    //   { clusterId: cluster.id },
+    //   { jobId: `summary:${cluster.id}` },
+    // );
   }
 }

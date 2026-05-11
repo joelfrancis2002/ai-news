@@ -1,6 +1,6 @@
 import { prisma } from "@ai-newsroom/database";
 import { computeEmbedding } from "../lib/embedding.js";
-import { enqueueClusterSweep } from "../queues.js";
+// import { enqueueClusterSweep } from "../queues.js";
 
 export async function processEmbeddingJob(articleId: string): Promise<void> {
   const article = await prisma.rawArticle.findUnique({
@@ -46,5 +46,6 @@ export async function processEmbeddingJob(articleId: string): Promise<void> {
     },
   });
 
-  await enqueueClusterSweep();
+  // In direct mode, clustering is done immediately after embedding
+  // await enqueueClusterSweep();
 }

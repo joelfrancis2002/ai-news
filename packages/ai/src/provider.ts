@@ -68,34 +68,69 @@ function validateSummaryOutput(value: JsonRecord): LlmSummaryOutput {
   };
 }
 
-function buildPrompt(input: LlmSummaryInput): string {
-  const articleLines = input.articles
-    .map(
-      (article, index) =>
-        [
-          `Article ${index + 1}:`,
-          `Title: ${article.title}`,
-          `Source: ${article.sourceName}`,
-          `URL: ${article.originalUrl}`,
-          `Description: ${article.description ?? ""}`,
-          `Content: ${(article.content ?? "").slice(0, 2500)}`,
-        ].join("\n"),
-    )
-    .join("\n\n");
+function buildPrompt(input: LlmSummaryInput): { system: string; user: string } {
+  const systemPrompt = `You are an expert, impartial Executive News Editor and Lead Fact-Checker for an automated newsroom.
 
-  return [
-    "You summarize grouped AI news articles for an editorial dashboard.",
-    "Return strict JSON with this shape:",
-    '{"headline":"string","summary":"string","keywords":["string"],"confidenceScore":0.0,"factCheckStatus":"verified|likely_true|partially_verified|unverified|disputed|low_quality"}',
-    "Rules:",
-    "- Keep the summary factual and concise.",
-    "- Use only the supplied article information.",
-    "- confidenceScore must be between 0 and 1.",
-    "- factCheckStatus should reflect evidence quality, not certainty beyond the articles.",
-    `Cluster title: ${input.clusterTitle}`,
-    "",
-    articleLines,
-  ].join("\n");
+Your task is to analyze a "cluster" of raw news articles that are supposedly about the same topic, synthesize their information into a single cohesive report, and rigorously fact-check the claims across the different sources.
+
+INPUT:
+You will receive a JSON array containing multiple articles. Each article includes a "title", "sourceName", "description", and raw "content".
+
+OUTPUT REQUIREMENT:
+You must return a single, strictly valid JSON object. Do not include any markdown formatting blocks (like \`\`\`json), conversational text, or explanations outside the JSON object. The JSON must exactly match the following schema:
+
+{
+  "headline": "string",
+  "summary": "string",
+  "keywords": ["string", "string", ...],
+  "factCheckStatus": "enum",
+  "confidenceScore": float
+}
+
+DETAILED GUIDELINES FOR EACH FIELD:
+
+1. "headline" (String)
+- Create a clear, objective, and engaging headline (max 80 characters).
+- Avoid clickbait, sensationalism, or opinion.
+- Summarize the core event or consensus of the cluster.
+
+2. "summary" (String)
+- Write a concise, journalistic summary (3 to 5 sentences).
+- Start with the most important facts (the "bottom line up front").
+- If sources disagree on specific details, explicitly state the discrepancy (e.g., "While Source A reports X, Source B claims Y").
+- Do not introduce outside knowledge; rely ONLY on the provided article texts.
+
+3. "keywords" (Array of Strings)
+- Extract 5 to 8 highly relevant keywords or keyphrases.
+- Include primary entities (people, companies, technologies, locations).
+
+4. "factCheckStatus" (String Enum)
+You must select EXACTLY ONE of the following precise strings based on cross-referencing the sources:
+- "verified": Multiple independent sources report the exact same core facts with high detail.
+- "likely_true": Most sources agree on the core facts, but minor details (like exact numbers or quotes) vary slightly.
+- "partially_verified": The core event occurred, but significant specific claims within the articles lack cross-corroboration.
+- "unverified": Only a single source is reporting the event, or the reports are based entirely on anonymous rumors without evidence.
+- "disputed": The sources fundamentally contradict each other on the core facts of the story.
+- "low_quality": The provided articles are mostly opinion, editorialized, clickbait, or lack concrete factual statements.
+
+5. "confidenceScore" (Float)
+- Provide a decimal number between 0.00 and 1.00.
+- 0.90 to 1.00: Perfect alignment across multiple high-quality sources.
+- 0.70 to 0.89: General agreement, minor discrepancies.
+- 0.40 to 0.69: Partial information, single-source reliance, or noticeable contradictions.
+- 0.00 to 0.39: Highly contradictory, speculative, or useless data.`;
+
+  const userMessage = JSON.stringify({
+    clusterTitle: input.clusterTitle,
+    articles: input.articles.map(a => ({
+      title: a.title,
+      sourceName: a.sourceName,
+      description: a.description,
+      content: (a.content ?? "").slice(0, 2500) // Truncate if too long
+    }))
+  });
+
+  return { system: systemPrompt, user: userMessage };
 }
 
 function extractJsonObject(text: string): JsonRecord {
@@ -118,6 +153,7 @@ class OpenAiProvider implements AiProvider {
   constructor(private readonly apiKey: string) {}
 
   async summarizeCluster(input: LlmSummaryInput): Promise<LlmSummaryOutput> {
+    const prompt = buildPrompt(input);
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -125,17 +161,17 @@ class OpenAiProvider implements AiProvider {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.2,
         response_format: { type: "json_object" },
         messages: [
           {
             role: "system",
-            content: "You are a careful AI news editor that returns JSON only.",
+            content: prompt.system,
           },
           {
             role: "user",
-            content: buildPrompt(input),
+            content: prompt.user,
           },
         ],
       }),
@@ -164,6 +200,7 @@ class GeminiProvider implements AiProvider {
   constructor(private readonly apiKey: string) {}
 
   async summarizeCluster(input: LlmSummaryInput): Promise<LlmSummaryOutput> {
+    const prompt = buildPrompt(input);
     const model = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.apiKey}`,
@@ -178,7 +215,7 @@ class GeminiProvider implements AiProvider {
           contents: [
             {
               role: "user",
-              parts: [{ text: buildPrompt(input) }],
+              parts: [{ text: `${prompt.system}\n\n${prompt.user}` }],
             },
           ],
         }),
