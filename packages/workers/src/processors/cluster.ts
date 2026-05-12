@@ -92,17 +92,16 @@ function deriveClusterTitle(members: EmbeddedArticle[]): string {
 }
 
 export async function processClusterJob(): Promise<void> {
-  const articles = await prisma.rawArticle.findMany({
+  const articles = (await prisma.rawArticle.findMany({
     where: {
       status: "embedded",
-      embedding: { isEmpty: false },
     },
     select: {
       id: true,
       title: true,
       embedding: true,
     },
-  });
+  })) as EmbeddedArticle[];
 
   if (articles.length === 0) {
     return;
@@ -124,7 +123,7 @@ export async function processClusterJob(): Promise<void> {
   }
 
   for (const members of groups.values()) {
-    const cluster = await prisma.articleCluster.create({
+    await prisma.articleCluster.create({
       data: {
         clusterTitle: deriveClusterTitle(members),
         members: {

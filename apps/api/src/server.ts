@@ -36,8 +36,20 @@ async function buildApp(): Promise<FastifyInstance> {
   }).withTypeProvider<TypeBoxTypeProvider>();
 
   // 1. CORS
+  const allowedOrigins = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    process.env.WEB_ORIGIN,
+  ].filter(Boolean);
+  
   await app.register(cors, {
-    origin: "http://localhost:5173",
+    origin: (origin: string | undefined) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return origin || "*";
+      }
+      return false;
+    },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
 

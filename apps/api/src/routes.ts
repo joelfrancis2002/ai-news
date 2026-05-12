@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "@sinclair/typebox";
 import { Prisma } from "@prisma/client";
 // import { getQueueStats } from "@ai-newsroom/workers/queues";
-import { getAdminUser, issueAuthToken, requireAuth } from "./auth.js";
+import { DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_NAME, DEFAULT_ADMIN_PASSWORD, hashPassword, issueAuthToken, requireAuth, verifyPassword } from "./auth.js";
 
 const ArticleStatusEnum = Type.Union([
   Type.Literal("fetched"),
@@ -163,7 +163,7 @@ const StatsSchema = Type.Object({
   }),
   pipeline: Type.Object({
     schedule: Type.String(),
-    queueMode: Type.Literal("bullmq"),
+    queueMode: Type.Union([Type.Literal("bullmq"), Type.Literal("direct")]),
     queues: Type.Object({
       ingest: Type.Object({
         waiting: Type.Number(),
@@ -299,7 +299,7 @@ function mapSummary(
     articleClusterId: string;
     headline: string;
     summary: string;
-    keywords: string[];
+    keywords: any;
     sourceName: string | null;
     sourceUrl: string | null;
     imageUrl: string | null;
@@ -318,7 +318,7 @@ function mapSummary(
     clusterTitle: summary.cluster?.clusterTitle ?? "",
     headline: summary.headline,
     summary: summary.summary,
-    keywords: summary.keywords,
+    keywords: summary.keywords as string[],
     sourceName: summary.sourceName,
     sourceUrl: summary.sourceUrl,
     imageUrl: summary.imageUrl,
@@ -400,7 +400,7 @@ function mapCluster(cluster: {
     articleClusterId: string;
     headline: string;
     summary: string;
-    keywords: string[];
+    keywords: any;
     sourceName: string | null;
     sourceUrl: string | null;
     imageUrl: string | null;
@@ -568,26 +568,80 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
           200: Type.Object({
             token: Type.String(),
             user: Type.Object({
+              id: Type.String(),
               email: Type.String(),
               name: Type.String(),
+              role: Type.String(),
             }),
           }),
         },
       },
     },
     async (request) => {
-      const admin = getAdminUser();
-      if (request.body.email !== admin.email || request.body.password !== admin.password) {
+      let user = await prisma.user.findUnique({
+        where: { email: request.body.email },
+      });
+
+      if (!user) {
+        const userCount = await prisma.user.count();
+        if (
+          userCount === 0 &&
+          request.body.email === DEFAULT_ADMIN_EMAIL &&
+          request.body.password === DEFAULT_ADMIN_PASSWORD
+        ) {
+          user = await prisma.user.create({
+            data: {
+              email: DEFAULT_ADMIN_EMAIL,
+              passwordHash: hashPassword(DEFAULT_ADMIN_PASSWORD),
+              name: DEFAULT_ADMIN_NAME,
+              role: "ADMIN",
+            },
+          });
+        }
+      }
+
+      if (!user || !verifyPassword(request.body.password, user.passwordHash)) {
         throw fastify.httpErrors.unauthorized("Invalid credentials");
       }
 
       return {
-        token: issueAuthToken(admin.email),
+        token: issueAuthToken({ userId: user.id, email: user.email, role: user.role }),
         user: {
-          email: admin.email,
-          name: admin.name,
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
         },
       };
+    },
+  );
+
+  fastify.get(
+    "/auth/me",
+    {
+      preHandler: requireAuth,
+      schema: {
+        response: {
+          200: Type.Object({
+            id: Type.String(),
+            email: Type.String(),
+            name: Type.String(),
+            role: Type.String(),
+          }),
+        },
+      },
+    },
+    async (request) => {
+      const user = await prisma.user.findUnique({
+        where: { id: request.user.userId },
+        select: { id: true, email: true, name: true, role: true },
+      });
+
+      if (!user) {
+        throw fastify.httpErrors.unauthorized("User not found");
+      }
+
+      return user;
     },
   );
 

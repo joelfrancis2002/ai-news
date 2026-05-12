@@ -1,65 +1,67 @@
 import crypto from "node:crypto";
+import jwt from "jsonwebtoken";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
-const DEFAULT_ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@newsroom.ai";
-const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "admin123";
-const DEFAULT_ADMIN_NAME = process.env.ADMIN_NAME ?? "Admin";
+export const DEFAULT_ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@newsroom.ai";
+export const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "admin123";
+export const DEFAULT_ADMIN_NAME = process.env.ADMIN_NAME ?? "Admin";
 const TOKEN_TTL_SECONDS = Number(process.env.AUTH_TOKEN_TTL_SECONDS ?? 60 * 60 * 24 * 7);
 
 function authSecret(): string {
   return process.env.AUTH_SECRET ?? `${DEFAULT_ADMIN_EMAIL}:${DEFAULT_ADMIN_PASSWORD}`;
 }
 
-function base64Url(value: string): string {
-  return Buffer.from(value, "utf8").toString("base64url");
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
 }
 
-function sign(payload: string): string {
-  return crypto.createHmac("sha256", authSecret()).update(payload).digest("base64url");
+export function verifyPassword(password: string, storedHash: string): boolean {
+  const [salt, key] = storedHash.split(":");
+  if (!salt || !key) return false;
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return hash === key;
 }
 
-export function getAdminUser() {
-  return {
-    email: DEFAULT_ADMIN_EMAIL,
-    password: DEFAULT_ADMIN_PASSWORD,
-    name: DEFAULT_ADMIN_NAME,
-  };
+export interface JwtPayload {
+  userId: string;
+  email: string;
+  role: string;
 }
 
-export function issueAuthToken(email: string): string {
-  const expiresAt = Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS;
-  const payload = `${email}:${expiresAt}`;
-  return `${base64Url(payload)}.${sign(payload)}`;
+declare module "fastify" {
+  interface FastifyRequest {
+    user: JwtPayload;
+  }
 }
 
-export function verifyAuthToken(token: string): { email: string } | null {
-  const [encoded, signature] = token.split(".");
-  if (!encoded || !signature) {
+export function issueAuthToken(payload: JwtPayload): string {
+  return jwt.sign(payload, authSecret(), {
+    expiresIn: TOKEN_TTL_SECONDS,
+  });
+}
+
+export function verifyAuthToken(token: string): JwtPayload | null {
+  try {
+    return jwt.verify(token, authSecret()) as JwtPayload;
+  } catch (error) {
     return null;
   }
-
-  const payload = Buffer.from(encoded, "base64url").toString("utf8");
-  if (sign(payload) !== signature) {
-    return null;
-  }
-
-  const [email, expiresAtRaw] = payload.split(":");
-  const expiresAt = Number(expiresAtRaw);
-  if (!email || !Number.isFinite(expiresAt) || expiresAt < Math.floor(Date.now() / 1000)) {
-    return null;
-  }
-
-  if (email !== DEFAULT_ADMIN_EMAIL) {
-    return null;
-  }
-
-  return { email };
 }
 
 export async function requireAuth(request: FastifyRequest, _reply: FastifyReply): Promise<void> {
   const authHeader = request.headers.authorization;
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  if (!token || !verifyAuthToken(token)) {
+  
+  if (!token) {
     throw request.server.httpErrors.unauthorized("Authentication required");
   }
+
+  const payload = verifyAuthToken(token);
+  if (!payload) {
+    throw request.server.httpErrors.unauthorized("Invalid or expired token");
+  }
+
+  request.user = payload;
 }

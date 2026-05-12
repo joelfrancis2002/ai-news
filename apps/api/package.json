@@ -18,10 +18,12 @@
     "@sinclair/typebox": "^0.34.49",
     "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "rss-parser": "^3.13.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.10.7",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

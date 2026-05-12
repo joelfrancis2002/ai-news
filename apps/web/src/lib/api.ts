@@ -1,19 +1,191 @@
-import type {
-  ArticleRecord,
-  ClusterDetail,
-  ClusterListItem,
-  HealthResponse,
-  LoginResponse,
-  PaginatedResponse,
-  PublishedArticleRecord,
-  ReviewCreateInput,
-  ReviewRecord,
-  SourceRecord,
-  SourceUpdateInput,
-  SourceWriteInput,
-  StatsResponse,
-  SummaryRecord,
-} from "@ai-newsroom/shared";
+export interface HealthResponse {
+  status: "ok";
+  service: string;
+  timestamp: string;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+}
+
+export interface LoginResponse {
+  token: string;
+  user: User;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export type SourceType = "rss" | "official_blog" | "news_site" | "research_feed" | "github_release" | "manual";
+
+export interface SourceRecord {
+  id: string;
+  name: string;
+  url: string;
+  sourceType: SourceType;
+  category: string | null;
+  trustLevel: number;
+  enabled: boolean;
+  crawlIntervalMinutes: number;
+  lastCrawledAt: string | null;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SourceWriteInput {
+  name: string;
+  url: string;
+  sourceType?: SourceType;
+  category?: string | null;
+  trustLevel?: number;
+  enabled?: boolean;
+  crawlIntervalMinutes?: number;
+}
+
+export type SourceUpdateInput = Partial<SourceWriteInput>;
+
+export type ArticleStatus = "fetched" | "embedded" | "clustered" | "summarized" | "pending_review" | "approved" | "rejected" | "published" | "fetch_failed";
+
+export interface ArticleRecord {
+  id: string;
+  sourceId: string;
+  sourceName: string;
+  originalUrl: string;
+  canonicalUrl: string | null;
+  title: string;
+  description: string | null;
+  content: string | null;
+  author: string | null;
+  publishedAt: string | null;
+  imageUrl: string | null;
+  status: ArticleStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FactCheckStatus = "verified" | "likely_true" | "partially_verified" | "unverified" | "disputed" | "low_quality";
+
+export interface SummaryRecord {
+  id: string;
+  articleClusterId: string;
+  clusterTitle: string;
+  headline: string;
+  summary: string;
+  keywords: string[];
+  sourceName: string | null;
+  sourceUrl: string | null;
+  imageUrl: string | null;
+  confidenceScore: number | null;
+  factCheckStatus: FactCheckStatus;
+  approvedForPublish: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReviewRecord {
+  id: string;
+  articleClusterId: string;
+  reviewerName: string | null;
+  decision: "approve" | "reject";
+  notes: string | null;
+  decidedAt: string;
+}
+
+export interface ReviewCreateInput {
+  reviewerName?: string | null;
+  decision: "approve" | "reject";
+  notes?: string | null;
+}
+
+export interface PublishedArticleRecord {
+  id: string;
+  articleClusterId: string;
+  slug: string;
+  headline: string;
+  summary: string;
+  imageUrl: string | null;
+  sourceUrl: string;
+  sourceName: string | null;
+  confidenceScore: number | null;
+  factCheckStatus: FactCheckStatus;
+  publishedAt: string;
+  updatedAt: string;
+}
+
+export interface ClusterListItem {
+  id: string;
+  clusterTitle: string;
+  articleCount: number;
+  summary: SummaryRecord | null;
+  factCheckStatus: FactCheckStatus;
+  confidenceScore: number;
+  reviewStatus: "unreviewed" | "approved" | "rejected";
+  published: PublishedArticleRecord | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClusterDetail extends ClusterListItem {
+  articles: ArticleRecord[];
+  reviews: ReviewRecord[];
+}
+
+export interface QueueStats {
+  waiting: number;
+  active: number;
+  completed: number;
+  failed: number;
+}
+
+export interface StatsResponse {
+  articles: {
+    total: number;
+    fetched: number;
+    embedded: number;
+    clustered: number;
+    summarized: number;
+    pending_review: number;
+    approved: number;
+    rejected: number;
+    published: number;
+    fetch_failed: number;
+  };
+  clusters: {
+    total: number;
+    published: number;
+    approved: number;
+    rejected: number;
+  };
+  sources: {
+    total: number;
+    enabled: number;
+    healthy: number;
+    unhealthy: number;
+  };
+  pipeline: {
+    schedule: string;
+    queueMode: "bullmq" | "direct";
+    queues: {
+      ingest: QueueStats;
+      embedding: QueueStats;
+      cluster: QueueStats;
+      summary: QueueStats;
+      publish: QueueStats;
+    };
+  };
+}
 
 const API_BASE = `${import.meta.env.VITE_API_BASE ?? "http://localhost:4000"}/api`;
 const AUTH_TOKEN_KEY = "ai_newsroom_auth_token";

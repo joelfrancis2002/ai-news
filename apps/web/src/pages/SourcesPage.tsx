@@ -1,6 +1,6 @@
 import { useState } from "react";
-import type { SourceType } from "@ai-newsroom/shared";
 import { useCreateSource, useDeleteSource, useSources, useUpdateSource } from "../hooks/queries";
+import type { SourceType } from "../lib/api";
 
 const SOURCE_TYPES: SourceType[] = [
   "rss",

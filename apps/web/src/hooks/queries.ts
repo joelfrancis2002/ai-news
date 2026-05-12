@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ReviewCreateInput, SourceUpdateInput, SourceWriteInput } from "@ai-newsroom/shared";
 import toast from "react-hot-toast";
 import { api } from "../lib/api";
+import type { ReviewCreateInput, SourceUpdateInput, SourceWriteInput } from "../lib/api";
 
 export const queryKeys = {
   health: ["health"] as const,
