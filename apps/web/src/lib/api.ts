@@ -220,33 +220,47 @@ export function getStoredUser(): { email: string; name: string } | null {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getStoredToken();
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init?.headers,
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-  if (response.status === 401) {
-    clearStoredAuth();
-  }
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      signal: init?.signal ?? controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init?.headers,
+      },
+    });
 
-  if (!response.ok) {
-    let message = `Request failed with status ${response.status}`;
-    try {
-      const body = (await response.json()) as { message?: string };
-      if (body.message) {
-        message = body.message;
-      }
-    } catch {
-      // Keep fallback message.
+    if (response.status === 401) {
+      clearStoredAuth();
+      window.dispatchEvent(new Event("auth:unauthorized"));
     }
-    throw new Error(message);
-  }
 
-  return response.json() as Promise<T>;
+    if (!response.ok) {
+      let message = `Request failed with status ${response.status}`;
+      try {
+        const body = (await response.json()) as { message?: string };
+        if (body.message) {
+          message = body.message;
+        }
+      } catch {
+        // Keep fallback message.
+      }
+      throw new Error(message);
+    }
+
+    return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Request timed out after 15 seconds. Please try again.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export const api = {

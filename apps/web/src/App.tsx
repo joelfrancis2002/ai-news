@@ -57,7 +57,7 @@ function AppRoutes() {
       <Routes>
         <Route
           path="/login"
-          element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />}
+          element={<LoginPage />}
         />
         <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
         <Route path="/clusters" element={<Protected><ClustersPage /></Protected>} />

@@ -1,55 +1,161 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import { api, clearStoredAuth, getStoredToken, getStoredUser, setStoredAuth } from "../lib/api";
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
+import { useNavigate } from "react-router-dom";
+import { apiClient } from "../lib/apiClient";
 
 type AuthUser = {
+  id: string;
   email: string;
   name: string;
 };
 
-type AuthContextValue = {
+type AuthState = {
   isAuthenticated: boolean;
+  isLoading: boolean;
+  token: string | null;
   user: AuthUser | null;
+};
+
+type AuthAction =
+  | { type: "HYDRATE_START" }
+  | { type: "HYDRATE_SUCCESS"; payload: { token: string; user: AuthUser } }
+  | { type: "HYDRATE_FAILURE" }
+  | { type: "LOGIN_SUCCESS"; payload: { token: string; user: AuthUser } }
+  | { type: "LOGOUT" };
+
+const initialState: AuthState = {
+  isAuthenticated: false,
+  isLoading: true,
+  token: null,
+  user: null,
+};
+
+function authReducer(state: AuthState, action: AuthAction): AuthState {
+  switch (action.type) {
+    case "HYDRATE_START":
+      return { ...state, isLoading: true };
+    case "HYDRATE_SUCCESS":
+    case "LOGIN_SUCCESS":
+      return {
+        isAuthenticated: true,
+        isLoading: false,
+        token: action.payload.token,
+        user: action.payload.user,
+      };
+    case "HYDRATE_FAILURE":
+    case "LOGOUT":
+      return {
+        isAuthenticated: false,
+        isLoading: false,
+        token: null,
+        user: null,
+      };
+    default:
+      return state;
+  }
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+const AUTH_TOKEN_STORAGE_KEY = "ai-newsroom-auth-token";
+
+function getStoredToken(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
+function setStoredToken(token: string): void {
+  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+}
+
+function clearStoredAuth(): void {
+  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
+type AuthContextValue = {
+  user: AuthUser | null;
+  token: string | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
 };
 
-const AuthContext = createContext<AuthContextValue | null>(null);
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => Boolean(getStoredToken()));
+  const navigate = useNavigate();
+  const [state, dispatch] = useReducer(authReducer, initialState);
+
+  useEffect(() => {
+    let active = true;
+
+    async function hydrate() {
+      dispatch({ type: "HYDRATE_START" });
+      const token = getStoredToken();
+      if (!token) {
+        dispatch({ type: "HYDRATE_FAILURE" });
+        return;
+      }
+
+      try {
+        const response = await apiClient.get<{ user: AuthUser }>("/auth/me");
+        if (!active) {
+          return;
+        }
+
+        setStoredToken(token);
+        dispatch({ type: "HYDRATE_SUCCESS", payload: { token, user: response.user } });
+      } catch {
+        if (!active) {
+          return;
+        }
+        clearStoredAuth();
+        dispatch({ type: "HYDRATE_FAILURE" });
+      }
+    }
+
+    hydrate();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const response = await api.login(email, password);
-    setStoredAuth(response.token, response.user);
-    setUser(response.user);
-    setIsAuthenticated(true);
+    const response = await apiClient.post<{ token: string; user: AuthUser }, { email: string; password: string }>(
+      "/auth/login",
+      { email, password },
+    );
+
+    setStoredToken(response.token);
+    dispatch({ type: "LOGIN_SUCCESS", payload: { token: response.token, user: response.user } });
     return true;
   }, []);
 
   const logout = useCallback(() => {
     clearStoredAuth();
-    setUser(null);
-    setIsAuthenticated(false);
-  }, []);
+    dispatch({ type: "LOGOUT" });
+    navigate("/login", { replace: true });
+  }, [navigate]);
 
   const value = useMemo(
     () => ({
-      isAuthenticated,
-      user,
+      user: state.user,
+      token: state.token,
+      isAuthenticated: state.isAuthenticated,
+      isLoading: state.isLoading,
       login,
       logout,
     }),
-    [isAuthenticated, login, logout, user],
+    [login, logout, state.isAuthenticated, state.isLoading, state.token, state.user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext);
-  if (!ctx) {
+  const context = useContext(AuthContext);
+  if (!context) {
     throw new Error("useAuth must be used inside AuthProvider");
   }
-  return ctx;
+  return context;
 }

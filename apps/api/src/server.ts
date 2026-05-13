@@ -36,21 +36,31 @@ async function buildApp(): Promise<FastifyInstance> {
   }).withTypeProvider<TypeBoxTypeProvider>();
 
   // 1. CORS
-  const allowedOrigins = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5175",
-    process.env.WEB_ORIGIN,
-  ].filter(Boolean);
-  
+  const rawOrigins = process.env.ALLOWED_ORIGINS ?? "";
+  const allowlist = new Set(
+    rawOrigins
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0),
+  );
+
+  const isDevelopment = process.env.NODE_ENV === "development";
+  if (isDevelopment) {
+    allowlist.add("http://localhost:5173");
+    allowlist.add("http://127.0.0.1:5173");
+  }
+
   await app.register(cors, {
     origin: (origin: string | undefined) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return origin || "*";
+      const allowed = !origin || allowlist.has(origin);
+      if (!allowed && isDevelopment) {
+        app.log.warn({ origin }, "cors_origin_blocked");
       }
-      return false;
+      return allowed;
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Authorization", "Content-Type", "X-Requested-With"],
+    credentials: true,
   });
 
   // 2. Sensible (httpErrors helpers)
