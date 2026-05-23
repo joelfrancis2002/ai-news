@@ -19,16 +19,15 @@ Implemented today:
 - Local summary generation with TextRank
 - Fastify API for core cluster/source workflows
 - React admin dashboard shell with protected routes
+- Simple stateless JWT authentication (`jsonwebtoken` + custom Fastify route hooks) with password verification and first-admin bootstrapping
+- Google Search Grounding for Gemini: Enables live web fact-checking to verify article originality, cross-reference sources on the web, and flag fake news/hoaxes.
 
 Still incomplete or inconsistent:
 
 - Some frontend pages use mock data instead of live API data
 - Some frontend screens expect API endpoints that do not exist yet
-- Auth is demo-only and stored in localStorage
 - BullMQ queue scaffolding exists, but the active runtime uses direct cron execution
-- `packages/ai` is still a stub for future external LLM integration
 - Review, publishing, and fact-check workflows are only partially represented
-- The full workspace build currently fails in `packages/workers/src/queues.ts` because of an `ioredis` TypeScript import/type mismatch
 
 ## Architecture
 
@@ -50,7 +49,7 @@ At the moment this pipeline is executed by a scheduled worker process using `nod
 | `packages/database` | Prisma schema, client, and seed data |
 | `packages/shared` | Shared API and worker types |
 | `packages/workers` | Scheduled ingestion, embedding, clustering, and summary pipeline |
-| `packages/ai` | Future AI provider abstraction for OpenAI/Gemini |
+| `packages/ai` | AI provider integration (OpenAI / Gemini with Google Search Grounding) |
 
 ## Tech Stack
 
@@ -178,6 +177,9 @@ Implemented routes in `apps/api/src/routes.ts`:
 - `PATCH /api/articles/:id/status`
 - `GET /api/sources`
 - `POST /api/sources`
+- `POST /api/auth/login` (Authentication endpoint)
+- `GET /api/auth/me` (Profile rehydration endpoint, protected by JWT)
+- `POST /api/auth/logout` (Logout endpoint)
 
 Important note:
 
@@ -219,18 +221,10 @@ Current caveats:
 - Another part uses `src/lib/api.ts`
 - These two clients expect different response shapes
 - `SourcesPage` still uses mock data
-- Auth is demo-only
 
 ## Build Status
 
-The repository is close to working end to end, but the root build is not fully clean yet.
-
-Current known issue:
-
-- `npm run build` fails in `packages/workers/src/queues.ts`
-- Cause: `ioredis` import/type usage needs to be corrected
-
-Until that is fixed, treat the project as development-stage rather than production-ready.
+The repository builds cleanly end-to-end. Running `npm run build` from the root workspace compiles all packages and apps (shared, database, workers, ai, api, web) sequentially without any TypeScript errors.
 
 ## Recommended Next Steps
 
@@ -239,9 +233,7 @@ High-priority cleanup:
 1. Unify frontend API clients into one contract
 2. Implement missing API routes required by the dashboard
 3. Replace mock source management with live backend integration
-4. Fix the worker package TypeScript build error
-5. Decide whether to keep direct cron mode or complete the BullMQ queue path
-6. Replace demo auth with real authentication
+4. Decide whether to keep direct cron mode or complete the BullMQ queue path
 
 Product completion:
 
@@ -253,4 +245,4 @@ Product completion:
 
 ## Summary
 
-This project is now a real MVP codebase for AI news aggregation, not just a starter repo. The backend pipeline is substantially implemented. The main work left is integration hardening, missing API coverage, removal of mocks, and build stabilization.
+This project is now a real MVP codebase for AI news aggregation, not just a starter repo. The backend pipeline is substantially implemented. The main work left is integration hardening, missing API coverage, removal of mocks, and product completion.

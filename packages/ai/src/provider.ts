@@ -73,6 +73,8 @@ function buildPrompt(input: LlmSummaryInput): { system: string; user: string } {
 
 Your task is to analyze a "cluster" of raw news articles that are supposedly about the same topic, synthesize their information into a single cohesive report, and rigorously fact-check the claims across the different sources.
 
+To perform high-quality fact-checking and originality verification, you have access to Google Search. You must search the live web to check if this news event actually occurred, verify if it is corroborated by reputable independent sources, and confirm that it is not fake news, a hoax, or a duplicate/outdated rumor of an older event.
+
 INPUT:
 You will receive a JSON array containing multiple articles. Each article includes a "title", "sourceName", "description", and raw "content".
 
@@ -98,24 +100,24 @@ DETAILED GUIDELINES FOR EACH FIELD:
 - Write a concise, journalistic summary (3 to 5 sentences).
 - Start with the most important facts (the "bottom line up front").
 - If sources disagree on specific details, explicitly state the discrepancy (e.g., "While Source A reports X, Source B claims Y").
-- Do not introduce outside knowledge; rely ONLY on the provided article texts.
+- Rely on the provided article texts, but verify and cross-reference all major claims against your live Google Search results to detect false statements, hoaxes, or duplicate reporting of outdated news.
 
 3. "keywords" (Array of Strings)
 - Extract 5 to 8 highly relevant keywords or keyphrases.
 - Include primary entities (people, companies, technologies, locations).
 
 4. "factCheckStatus" (String Enum)
-You must select EXACTLY ONE of the following precise strings based on cross-referencing the sources:
-- "verified": Multiple independent sources report the exact same core facts with high detail.
-- "likely_true": Most sources agree on the core facts, but minor details (like exact numbers or quotes) vary slightly.
-- "partially_verified": The core event occurred, but significant specific claims within the articles lack cross-corroboration.
-- "unverified": Only a single source is reporting the event, or the reports are based entirely on anonymous rumors without evidence.
-- "disputed": The sources fundamentally contradict each other on the core facts of the story.
-- "low_quality": The provided articles are mostly opinion, editorialized, clickbait, or lack concrete factual statements.
+You must select EXACTLY ONE of the following precise strings based on cross-referencing the sources and your Google Search results:
+- "verified": Multiple independent, reputable sources report the exact same core facts with high detail.
+- "likely_true": Most sources agree on the core facts, but minor details (like exact numbers or quotes) vary slightly, or it is widely corroborated on the web.
+- "partially_verified": The core event occurred, but significant specific claims within the articles lack cross-corroboration on the web.
+- "unverified": Only a single source is reporting the event, or the reports are based entirely on anonymous rumors without secondary evidence on the web.
+- "disputed": The sources or web reports fundamentally contradict each other on the core facts of the story.
+- "low_quality": The provided articles or web reports are mostly opinion, editorialized, clickbait, or lack concrete factual statements.
 
 5. "confidenceScore" (Float)
 - Provide a decimal number between 0.00 and 1.00.
-- 0.90 to 1.00: Perfect alignment across multiple high-quality sources.
+- 0.90 to 1.00: Perfect alignment across multiple high-quality sources, verified on the web.
 - 0.70 to 0.89: General agreement, minor discrepancies.
 - 0.40 to 0.69: Partial information, single-source reliance, or noticeable contradictions.
 - 0.00 to 0.39: Highly contradictory, speculative, or useless data.`;
@@ -216,6 +218,11 @@ class GeminiProvider implements AiProvider {
             {
               role: "user",
               parts: [{ text: `${prompt.system}\n\n${prompt.user}` }],
+            },
+          ],
+          tools: [
+            {
+              googleSearch: {},
             },
           ],
         }),

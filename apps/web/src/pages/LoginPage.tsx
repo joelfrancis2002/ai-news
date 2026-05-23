@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export function LoginPage() {
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("admin@newsroom.ai");
   const [password, setPassword] = useState("admin123");
@@ -23,12 +23,19 @@ export function LoginPage() {
 
     try {
       await login(email, password);
-      navigate("/dashboard", { replace: true });
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : "Login failed");
     } finally {
       setLoading(false);
     }
+  }
+
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
+        <div className="text-sm font-medium text-slate-300">Loading...</div>
+      </div>
+    );
   }
 
   return (

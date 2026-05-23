@@ -79,7 +79,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void>;
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -131,7 +131,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return true;
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try {
+      await apiClient.post<{ success: boolean }, undefined>("/auth/logout", undefined);
+    } catch {
+      // Best-effort logout only; local auth state still wins.
+    }
+
     clearStoredAuth();
     dispatch({ type: "LOGOUT" });
     navigate("/login", { replace: true });

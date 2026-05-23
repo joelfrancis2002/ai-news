@@ -188,8 +188,8 @@ export interface StatsResponse {
 }
 
 const API_BASE = `${import.meta.env.VITE_API_BASE ?? "http://localhost:4000"}/api`;
-const AUTH_TOKEN_KEY = "ai_newsroom_auth_token";
-const AUTH_USER_KEY = "ai_newsroom_auth_user";
+const AUTH_TOKEN_KEY = "ai-newsroom-auth-token";
+const AUTH_USER_KEY = "ai-newsroom-auth-user";
 
 export function getStoredToken(): string | null {
   return localStorage.getItem(AUTH_TOKEN_KEY);

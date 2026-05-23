@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-config({ path: path.resolve(__dirname, "../../../.env") });
+config({ path: path.resolve(__dirname, "../../../.env"), override: true });
 
 import Fastify, { type FastifyInstance } from "fastify";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
@@ -13,6 +13,31 @@ import cors from "@fastify/cors";
 import sensible from "@fastify/sensible";
 import { PrismaClient } from "@prisma/client";
 import routes from "./routes.js";
+
+// ─── Fail-Fast Environment Validation ────────────────────────────────────────
+// Validate required env vars before the server starts so errors are obvious.
+function validateEnv() {
+  const required = ["AUTH_SECRET", "DATABASE_URL"];
+  const missing = required.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    console.error(
+      `\n[STARTUP ERROR] Missing required environment variables:\n` +
+      missing.map((key) => `  - ${key}`).join("\n") +
+      "\n\nCheck your .env file or environment configuration.\n",
+    );
+    process.exit(1);
+  }
+
+  if ((process.env.AUTH_SECRET?.length ?? 0) < 32) {
+    console.error(
+      "\n[STARTUP ERROR] AUTH_SECRET is too short. Use a 64+ character random string.\n" +
+      "Generate: node -e \"console.log(require('crypto').randomBytes(64).toString('hex'))\"\n",
+    );
+    process.exit(1);
+  }
+}
+
+validateEnv();
 
 // ─── Prisma type augmentation ─────────────────────────────────────────────────
 
@@ -46,17 +71,19 @@ async function buildApp(): Promise<FastifyInstance> {
 
   const isDevelopment = process.env.NODE_ENV === "development";
   if (isDevelopment) {
-    allowlist.add("http://localhost:5173");
-    allowlist.add("http://127.0.0.1:5173");
+    for (const port of ["5173", "5174", "5175"]) {
+      allowlist.add(`http://localhost:${port}`);
+      allowlist.add(`http://127.0.0.1:${port}`);
+    }
   }
 
   await app.register(cors, {
-    origin: (origin: string | undefined) => {
+    origin: (origin: string | undefined, callback) => {
       const allowed = !origin || allowlist.has(origin);
       if (!allowed && isDevelopment) {
         app.log.warn({ origin }, "cors_origin_blocked");
       }
-      return allowed;
+      callback(null, allowed);
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Authorization", "Content-Type", "X-Requested-With"],

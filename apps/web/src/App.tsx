@@ -50,7 +50,7 @@ function Protected({ children }: { children: React.ReactNode }) {
 }
 
 function AppRoutes() {
-  const { isAuthenticated } = useAuth();
+  useAuth();
 
   return (
     <>

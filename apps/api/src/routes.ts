@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "@sinclair/typebox";
 import { Prisma } from "@prisma/client";
 // import { getQueueStats } from "@ai-newsroom/workers/queues";
-import { DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_NAME, DEFAULT_ADMIN_PASSWORD, hashPassword, issueAuthToken, requireAuth, verifyPassword } from "./auth.js";
+import { getAdminBootstrapCredentials, hashPassword, issueAuthToken, requireAuth, verifyPassword } from "./auth.js";
 
 const ArticleStatusEnum = Type.Union([
   Type.Literal("fetched"),
@@ -556,6 +556,13 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
     } as const),
   );
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // ACTIVE AUTH ROUTES
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // These routes use the simple auth system from src/auth.ts.
+  // The advanced service-layer auth system was archived out of the active tree.
+  // Do not mix concerns — all auth logic flows through auth.ts only.
+  // ═══════════════════════════════════════════════════════════════════════════════
   fastify.post(
     "/auth/login",
     {
@@ -574,26 +581,44 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
               role: Type.String(),
             }),
           }),
+          403: Type.Object({
+            error: Type.String(),
+          }),
         },
       },
     },
-    async (request) => {
+    async (request, reply) => {
+      // ─── SECURITY NOTE ────────────────────────────────────────────────────────────
+      // Auto-creation of the first admin user is controlled by ALLOW_FIRST_USER_BOOTSTRAP.
+      // This env var must be explicitly set to "true" to enable bootstrap mode.
+      // In production, this should NEVER be true. Remove or unset it after first setup.
+      // ─────────────────────────────────────────────────────────────────────────────
       let user = await prisma.user.findUnique({
         where: { email: request.body.email },
       });
 
       if (!user) {
         const userCount = await prisma.user.count();
-        if (
-          userCount === 0 &&
-          request.body.email === DEFAULT_ADMIN_EMAIL &&
-          request.body.password === DEFAULT_ADMIN_PASSWORD
-        ) {
+        if (userCount === 0) {
+          if (process.env.ALLOW_FIRST_USER_BOOTSTRAP !== "true") {
+            return reply.status(403).send({
+              error:
+                "No users exist in the system. Please create the first admin user " +
+                "via database seed or set ALLOW_FIRST_USER_BOOTSTRAP=true in your environment.",
+            });
+          }
+
+          request.log.warn(
+            "⚠️  [BOOTSTRAP] Auto-creating first admin user. " +
+            "Remove ALLOW_FIRST_USER_BOOTSTRAP from your environment after setup.",
+          );
+
+          const { email, password, name } = getAdminBootstrapCredentials();
           user = await prisma.user.create({
             data: {
-              email: DEFAULT_ADMIN_EMAIL,
-              passwordHash: hashPassword(DEFAULT_ADMIN_PASSWORD),
-              name: DEFAULT_ADMIN_NAME,
+              email,
+              passwordHash: hashPassword(password),
+              name,
               role: "ADMIN",
             },
           });
@@ -623,10 +648,12 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
       schema: {
         response: {
           200: Type.Object({
-            id: Type.String(),
-            email: Type.String(),
-            name: Type.String(),
-            role: Type.String(),
+            user: Type.Object({
+              id: Type.String(),
+              email: Type.String(),
+              name: Type.String(),
+              role: Type.String(),
+            }),
           }),
         },
       },
@@ -641,8 +668,23 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
         throw fastify.httpErrors.unauthorized("User not found");
       }
 
-      return user;
+      return { user };
     },
+  );
+
+  fastify.post(
+    "/auth/logout",
+    {
+      preHandler: requireAuth,
+      schema: {
+        response: {
+          200: Type.Object({
+            success: Type.Boolean(),
+          }),
+        },
+      },
+    },
+    async (_request, reply) => reply.send({ success: true }),
   );
 
   fastify.get(
