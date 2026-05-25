@@ -12,7 +12,8 @@ import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
-const TOKEN_TTL_SECONDS = Number(process.env.AUTH_TOKEN_TTL_SECONDS ?? 60 * 60 * 24 * 7);
+const ACCESS_TOKEN_TTL_SECONDS = Number(process.env.AUTH_ACCESS_TOKEN_TTL_SECONDS ?? 900); // 15 minutes
+const REFRESH_TOKEN_TTL_SECONDS = Number(process.env.AUTH_REFRESH_TOKEN_TTL_SECONDS ?? 60 * 60 * 24 * 7); // 7 days
 
 // ─── Admin Bootstrap Credentials ─────────────────────────────────────────────
 // These are REQUIRED only when ALLOW_FIRST_USER_BOOTSTRAP=true is set.
@@ -82,7 +83,7 @@ declare module "fastify" {
 
 export function issueAuthToken(payload: JwtPayload): string {
   return jwt.sign(payload, authSecret(), {
-    expiresIn: TOKEN_TTL_SECONDS,
+    expiresIn: ACCESS_TOKEN_TTL_SECONDS,
   });
 }
 
@@ -90,6 +91,20 @@ export function verifyAuthToken(token: string): JwtPayload | null {
   try {
     return jwt.verify(token, authSecret()) as JwtPayload;
   } catch (error) {
+    return null;
+  }
+}
+
+export function issueRefreshToken(payload: { userId: string }): string {
+  return jwt.sign(payload, authSecret(), {
+    expiresIn: REFRESH_TOKEN_TTL_SECONDS,
+  });
+}
+
+export function verifyRefreshToken(token: string): { userId: string } | null {
+  try {
+    return jwt.verify(token, authSecret()) as { userId: string };
+  } catch {
     return null;
   }
 }

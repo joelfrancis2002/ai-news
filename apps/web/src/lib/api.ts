@@ -1,3 +1,5 @@
+import { apiClient } from "./apiClient";
+
 export interface HealthResponse {
   status: "ok";
   service: string;
@@ -187,135 +189,38 @@ export interface StatsResponse {
   };
 }
 
-const API_BASE = `${import.meta.env.VITE_API_BASE ?? "http://localhost:4000"}/api`;
-const AUTH_TOKEN_KEY = "ai-newsroom-auth-token";
-const AUTH_USER_KEY = "ai-newsroom-auth-user";
-
-export function getStoredToken(): string | null {
-  return localStorage.getItem(AUTH_TOKEN_KEY);
-}
-
-export function setStoredAuth(token: string, user: { email: string; name: string }): void {
-  localStorage.setItem(AUTH_TOKEN_KEY, token);
-  localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-}
-
-export function clearStoredAuth(): void {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  localStorage.removeItem(AUTH_USER_KEY);
-}
-
-export function getStoredUser(): { email: string; name: string } | null {
-  const raw = localStorage.getItem(AUTH_USER_KEY);
-  if (!raw) {
-    return null;
-  }
-  try {
-    return JSON.parse(raw) as { email: string; name: string };
-  } catch {
-    clearStoredAuth();
-    return null;
-  }
-}
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getStoredToken();
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-  try {
-    const response = await fetch(`${API_BASE}${path}`, {
-      ...init,
-      signal: init?.signal ?? controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...init?.headers,
-      },
-    });
-
-    if (response.status === 401) {
-      clearStoredAuth();
-      window.dispatchEvent(new Event("auth:unauthorized"));
-    }
-
-    if (!response.ok) {
-      let message = `Request failed with status ${response.status}`;
-      try {
-        const body = (await response.json()) as { message?: string };
-        if (body.message) {
-          message = body.message;
-        }
-      } catch {
-        // Keep fallback message.
-      }
-      throw new Error(message);
-    }
-
-    return (await response.json()) as T;
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("Request timed out after 15 seconds. Please try again.");
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
 export const api = {
   login: (email: string, password: string) =>
-    apiFetch<LoginResponse>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    }),
-  health: () => apiFetch<HealthResponse>("/health"),
-  stats: () => apiFetch<StatsResponse>("/stats"),
+    apiClient.post<LoginResponse>("/auth/login", { email, password }),
+  health: () => apiClient.get<HealthResponse>("/health"),
+  stats: () => apiClient.get<StatsResponse>("/stats"),
   sources: (page = 1, limit = 50) =>
-    apiFetch<PaginatedResponse<SourceRecord>>(`/sources?page=${page}&limit=${limit}`),
+    apiClient.get<PaginatedResponse<SourceRecord>>("/sources", { page, limit }),
   createSource: (payload: SourceWriteInput) =>
-    apiFetch<SourceRecord>("/sources", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
+    apiClient.post<SourceRecord>("/sources", payload),
   updateSource: (id: string, payload: SourceUpdateInput) =>
-    apiFetch<SourceRecord>(`/sources/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    }),
+    apiClient.patch<SourceRecord>(`/sources/${id}`, payload),
   deleteSource: (id: string) =>
-    apiFetch<{ deleted: boolean }>(`/sources/${id}`, {
-      method: "DELETE",
-    }),
+    apiClient.del<{ deleted: boolean }>(`/sources/${id}`),
   articles: (page = 1, limit = 20, status?: string) =>
-    apiFetch<PaginatedResponse<ArticleRecord>>(
-      `/articles?page=${page}&limit=${limit}${status ? `&status=${status}` : ""}`,
+    apiClient.get<PaginatedResponse<ArticleRecord>>(
+      "/articles",
+      status ? { page, limit, status } : { page, limit }
     ),
-  article: (id: string) => apiFetch<ArticleRecord>(`/articles/${id}`),
+  article: (id: string) => apiClient.get<ArticleRecord>(`/articles/${id}`),
   updateArticleStatus: (id: string, status: "fetched" | "approved" | "rejected") =>
-    apiFetch<ArticleRecord>(`/articles/${id}/status`, {
-      method: "PATCH",
-      body: JSON.stringify({ status }),
-    }),
+    apiClient.patch<ArticleRecord>(`/articles/${id}/status`, { status }),
   clusters: (page = 1, limit = 20) =>
-    apiFetch<PaginatedResponse<ClusterListItem>>(`/clusters?page=${page}&limit=${limit}`),
-  cluster: (id: string) => apiFetch<ClusterDetail>(`/clusters/${id}`),
+    apiClient.get<PaginatedResponse<ClusterListItem>>("/clusters", { page, limit }),
+  cluster: (id: string) => apiClient.get<ClusterDetail>(`/clusters/${id}`),
   summaries: (page = 1, limit = 20) =>
-    apiFetch<PaginatedResponse<SummaryRecord>>(`/summaries?page=${page}&limit=${limit}`),
+    apiClient.get<PaginatedResponse<SummaryRecord>>("/summaries", { page, limit }),
   addReview: (clusterId: string, payload: ReviewCreateInput) =>
-    apiFetch<ReviewRecord>(`/clusters/${clusterId}/reviews`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
+    apiClient.post<ReviewRecord>(`/clusters/${clusterId}/reviews`, payload),
   publishCluster: (clusterId: string, slug?: string) =>
-    apiFetch<PublishedArticleRecord>(`/clusters/${clusterId}/publish`, {
-      method: "POST",
-      body: JSON.stringify(slug ? { slug } : {}),
-    }),
+    apiClient.post<PublishedArticleRecord>(`/clusters/${clusterId}/publish`, slug ? { slug } : {}),
   published: (page = 1, limit = 20) =>
-    apiFetch<PaginatedResponse<PublishedArticleRecord>>(
-      `/published?page=${page}&limit=${limit}`,
-    ),
+    apiClient.get<PaginatedResponse<PublishedArticleRecord>>("/published", { page, limit }),
 };
 
 export type {

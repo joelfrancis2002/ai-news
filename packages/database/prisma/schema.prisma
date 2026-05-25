@@ -60,6 +60,18 @@ model User {
   @@index([email])
 }
 
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
+}
+
+
 model Source {
   id                   String       @id @default(uuid())
   name                 String

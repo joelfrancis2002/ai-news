@@ -11,6 +11,7 @@ export class ApiError extends Error {
 }
 
 const AUTH_TOKEN_STORAGE_KEY = "ai-newsroom-auth-token";
+const AUTH_REFRESH_TOKEN_STORAGE_KEY = "ai-newsroom-refresh-token";
 const DEFAULT_TIMEOUT_MS = 10000;
 
 function getTokenFromStorage(): string | null {
@@ -20,9 +21,24 @@ function getTokenFromStorage(): string | null {
   return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
 }
 
-function clearTokenAndRedirect(): void {
+function getRefreshTokenFromStorage(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window.localStorage.getItem(AUTH_REFRESH_TOKEN_STORAGE_KEY);
+}
+
+export function setStoredTokens(token: string, refreshToken: string): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+    window.localStorage.setItem(AUTH_REFRESH_TOKEN_STORAGE_KEY, refreshToken);
+  }
+}
+
+export function clearTokenAndRedirect(): void {
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    window.localStorage.removeItem(AUTH_REFRESH_TOKEN_STORAGE_KEY);
     window.location.replace("/login");
   }
 }
@@ -71,6 +87,7 @@ type RequestOptions = {
 };
 
 export class ApiClient {
+  private static refreshPromise: Promise<{ token: string; refreshToken: string }> | null = null;
   readonly baseUrl: string;
 
   constructor(baseUrl: string) {
@@ -98,6 +115,8 @@ export class ApiClient {
     }
 
     const normalizedEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+    const isRefreshRoute = normalizedEndpoint === "/auth/refresh";
+
     const response = await fetch(`${this.baseUrl}${normalizedEndpoint}`, {
       method,
       headers,
@@ -107,7 +126,59 @@ export class ApiClient {
 
     window.clearTimeout(timeout);
 
-    if (response.status === 401) {
+    if (response.status === 401 && !isRefreshRoute) {
+      const refreshToken = getRefreshTokenFromStorage();
+      if (refreshToken) {
+        try {
+          if (!ApiClient.refreshPromise) {
+            ApiClient.refreshPromise = (async () => {
+              const res = await fetch(`${this.baseUrl}/auth/refresh`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ refreshToken }),
+              });
+              if (!res.ok) {
+                throw new Error("Refresh failed");
+              }
+              const data = (await res.json()) as { token: string; refreshToken: string };
+              setStoredTokens(data.token, data.refreshToken);
+              return data;
+            })();
+          }
+
+          const newTokens = await ApiClient.refreshPromise;
+          ApiClient.refreshPromise = null;
+
+          const newHeaders = {
+            ...headers,
+            Authorization: `Bearer ${newTokens.token}`,
+          };
+          const retryResponse = await fetch(`${this.baseUrl}${normalizedEndpoint}`, {
+            method,
+            headers: newHeaders,
+            body: body === undefined ? undefined : JSON.stringify(body),
+          });
+
+          if (retryResponse.status === 401) {
+            clearTokenAndRedirect();
+            throw new ApiError(401, "Unauthorized", null);
+          }
+
+          const retryPayload = await parseJsonOrText(retryResponse);
+          if (!retryResponse.ok) {
+            throw new ApiError(retryResponse.status, "Retry request failed", retryPayload);
+          }
+          return retryPayload as T;
+        } catch (error) {
+          ApiClient.refreshPromise = null;
+          clearTokenAndRedirect();
+          throw new ApiError(401, "Unauthorized", null);
+        }
+      } else {
+        clearTokenAndRedirect();
+        throw new ApiError(401, "Unauthorized", null);
+      }
+    } else if (response.status === 401 && isRefreshRoute) {
       clearTokenAndRedirect();
       throw new ApiError(401, "Unauthorized", null);
     }

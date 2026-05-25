@@ -57,6 +57,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const AUTH_TOKEN_STORAGE_KEY = "ai-newsroom-auth-token";
+const AUTH_REFRESH_TOKEN_STORAGE_KEY = "ai-newsroom-refresh-token";
 
 function getStoredToken(): string | null {
   if (typeof window === "undefined") {
@@ -65,12 +66,14 @@ function getStoredToken(): string | null {
   return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
 }
 
-function setStoredToken(token: string): void {
+function setStoredTokens(token: string, refreshToken: string): void {
   window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+  window.localStorage.setItem(AUTH_REFRESH_TOKEN_STORAGE_KEY, refreshToken);
 }
 
 function clearStoredAuth(): void {
   window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  window.localStorage.removeItem(AUTH_REFRESH_TOKEN_STORAGE_KEY);
 }
 
 type AuthContextValue = {
@@ -103,8 +106,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        setStoredToken(token);
-        dispatch({ type: "HYDRATE_SUCCESS", payload: { token, user: response.user } });
+        const activeToken = getStoredToken() ?? token;
+        dispatch({ type: "HYDRATE_SUCCESS", payload: { token: activeToken, user: response.user } });
       } catch {
         if (!active) {
           return;
@@ -121,12 +124,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const response = await apiClient.post<{ token: string; user: AuthUser }, { email: string; password: string }>(
+    const response = await apiClient.post<{ token: string; refreshToken: string; user: AuthUser }, { email: string; password: string }>(
       "/auth/login",
       { email, password },
     );
 
-    setStoredToken(response.token);
+    setStoredTokens(response.token, response.refreshToken);
     dispatch({ type: "LOGIN_SUCCESS", payload: { token: response.token, user: response.user } });
     return true;
   }, []);

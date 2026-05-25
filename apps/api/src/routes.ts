@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "@sinclair/typebox";
 import { Prisma } from "@prisma/client";
 // import { getQueueStats } from "@ai-newsroom/workers/queues";
-import { getAdminBootstrapCredentials, hashPassword, issueAuthToken, requireAuth, verifyPassword } from "./auth.js";
+import { getAdminBootstrapCredentials, hashPassword, issueAuthToken, issueRefreshToken, verifyRefreshToken, requireAuth, verifyPassword } from "./auth.js";
 
 const ArticleStatusEnum = Type.Union([
   Type.Literal("fetched"),
@@ -574,6 +574,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
         response: {
           200: Type.Object({
             token: Type.String(),
+            refreshToken: Type.String(),
             user: Type.Object({
               id: Type.String(),
               email: Type.String(),
@@ -629,8 +630,23 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
         throw fastify.httpErrors.unauthorized("Invalid credentials");
       }
 
+      const token = issueAuthToken({ userId: user.id, email: user.email, role: user.role });
+      const refreshToken = issueRefreshToken({ userId: user.id });
+
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      await prisma.refreshToken.create({
+        data: {
+          token: refreshToken,
+          userId: user.id,
+          expiresAt,
+        },
+      });
+
       return {
-        token: issueAuthToken({ userId: user.id, email: user.email, role: user.role }),
+        token,
+        refreshToken,
         user: {
           id: user.id,
           email: user.email,
@@ -684,7 +700,75 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
         },
       },
     },
-    async (_request, reply) => reply.send({ success: true }),
+    async (request, reply) => {
+      await prisma.refreshToken.deleteMany({
+        where: { userId: request.user.userId },
+      }).catch(() => {});
+      
+      return reply.send({ success: true });
+    },
+  );
+
+  fastify.post(
+    "/auth/refresh",
+    {
+      schema: {
+        body: Type.Object({
+          refreshToken: Type.String({ minLength: 1 }),
+        }),
+        response: {
+          200: Type.Object({
+            token: Type.String(),
+            refreshToken: Type.String(),
+          }),
+        },
+      },
+    },
+    async (request) => {
+      const { refreshToken: oldToken } = request.body;
+      const payload = verifyRefreshToken(oldToken);
+      if (!payload) {
+        throw fastify.httpErrors.unauthorized("Invalid or expired refresh token");
+      }
+
+      const storedToken = await prisma.refreshToken.findUnique({
+        where: { token: oldToken },
+      });
+
+      if (!storedToken || storedToken.expiresAt < new Date()) {
+        if (storedToken) {
+          await prisma.refreshToken.delete({ where: { id: storedToken.id } }).catch(() => {});
+        }
+        throw fastify.httpErrors.unauthorized("Invalid or expired refresh token");
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: payload.userId },
+      });
+
+      if (!user) {
+        throw fastify.httpErrors.unauthorized("User not found");
+      }
+
+      // Rotate tokens
+      await prisma.refreshToken.delete({ where: { id: storedToken.id } }).catch(() => {});
+
+      const token = issueAuthToken({ userId: user.id, email: user.email, role: user.role });
+      const refreshToken = issueRefreshToken({ userId: user.id });
+
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      await prisma.refreshToken.create({
+        data: {
+          token: refreshToken,
+          userId: user.id,
+          expiresAt,
+        },
+      });
+
+      return { token, refreshToken };
+    },
   );
 
   fastify.get(
