@@ -582,6 +582,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
               email: Type.Optional(Type.String()),
               name: Type.String(),
               role: Type.String(),
+              userType: Type.String(),
             }),
           }),
           403: Type.Object({
@@ -662,6 +663,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
             email: user.email,
             name: user.name,
             role: user.role,
+            userType: "admin",
           },
         };
       } else if (loginType === "reader") {
@@ -699,6 +701,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
             id: reader.id,
             name: reader.name,
             role: "READER",
+            userType: "reader",
           },
         };
       } else {
@@ -761,6 +764,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
               email: Type.Optional(Type.String()),
               name: Type.String(),
               role: Type.String(),
+              userType: Type.String(),
             }),
           }),
         },
@@ -777,7 +781,15 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
           throw fastify.httpErrors.unauthorized("User not found");
         }
 
-        return { user };
+        return {
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            userType: "admin",
+          },
+        };
       } else {
         const reader = await prisma.reader.findUnique({
           where: { id: request.user.userId },
@@ -793,6 +805,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
             id: reader.id,
             name: reader.name,
             role: "READER",
+            userType: "reader",
           },
         };
       }
