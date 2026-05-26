@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "@sinclair/typebox";
 import { Prisma } from "@prisma/client";
-// import { getQueueStats } from "@ai-newsroom/workers/queues";
+import { getQueueStats } from "@ai-newsroom/workers/queues";
 import { getAdminBootstrapCredentials, hashPassword, issueAuthToken, issueRefreshToken, verifyRefreshToken, requireAuth, verifyPassword, requireAdminOrEditor } from "./auth.js";
 
 const ArticleStatusEnum = Type.Union([
@@ -467,16 +467,22 @@ async function buildStats(prisma: FastifyPluginAsyncTypebox extends never ? neve
       orderBy: [{ articleClusterId: "asc" }, { decidedAt: "desc" }],
       select: { decision: true },
     }),
-    // getQueueStats(), // Commented out for direct mode
   ]);
 
-  const queueStats = {
+  let queueStats = {
     ingest: { waiting: 0, active: 0, completed: 0, failed: 0 },
     embedding: { waiting: 0, active: 0, completed: 0, failed: 0 },
     cluster: { waiting: 0, active: 0, completed: 0, failed: 0 },
     summary: { waiting: 0, active: 0, completed: 0, failed: 0 },
     publish: { waiting: 0, active: 0, completed: 0, failed: 0 },
   };
+
+  try {
+    const stats = await getQueueStats();
+    queueStats = stats;
+  } catch (error) {
+    console.error("Failed to fetch queue stats from Redis:", error);
+  }
 
   const baseCounts = {
     total: 0,
@@ -527,7 +533,7 @@ async function buildStats(prisma: FastifyPluginAsyncTypebox extends never ? neve
     },
     pipeline: {
       schedule: process.env.INGEST_CRON ?? "*/15 * * * *",
-      queueMode: "direct" as const,
+      queueMode: "bullmq" as const,
       queues: queueStats,
     },
   };

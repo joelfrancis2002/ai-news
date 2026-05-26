@@ -13,7 +13,7 @@
     "dev": "concurrently -n api,web -c blue,green \"npm run dev:api\" \"npm run dev:web\"",
     "dev:api": "npm run dev -w @ai-newsroom/api",
     "dev:web": "npm run dev -w @ai-newsroom/web",
-    "dev:workers": "dotenv -e .env -- npm run dev:direct -w @ai-newsroom/workers",
+    "dev:workers": "dotenv -e .env -- npm run dev -w @ai-newsroom/workers",
     "dev:all": "concurrently -n api,web,workers -c blue,green,yellow \"npm run dev:api\" \"npm run dev:web\" \"npm run dev:workers\"",
     "build": "npm run build -w @ai-newsroom/shared && npm run build -w @ai-newsroom/database && npm run build -w @ai-newsroom/workers && npm run build -w @ai-newsroom/ai && npm run build -w @ai-newsroom/api && npm run build -w @ai-newsroom/web",
     "db:generate": "npm run generate -w @ai-newsroom/database",
