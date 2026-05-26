@@ -137,11 +137,11 @@ export function LoginPage() {
                   value={userId}
                   onChange={(event) => setUserId(event.target.value)}
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500"
-                  placeholder="put your email here"
+                  placeholder="name@example.com"
                   required
                 />
-                <p className="mt-1.5 text-[11px] text-blue-400 font-medium">
-                  💡 Specifically, you must put your email address here as your User Name during the signing up process.
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  Your email address will serve as your unique username to log in.
                 </p>
               </div>
 
@@ -155,7 +155,7 @@ export function LoginPage() {
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500"
-                  placeholder="give a given name"
+                  placeholder="Enter your full name"
                   required
                 />
               </div>
@@ -171,7 +171,7 @@ export function LoginPage() {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500"
-                placeholder="put your email here"
+                placeholder="name@example.com"
                 required
               />
             </div>
@@ -186,7 +186,7 @@ export function LoginPage() {
                 value={userId}
                 onChange={(event) => setUserId(event.target.value)}
                 className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500"
-                placeholder="put your email here"
+                placeholder="name@example.com"
                 required
               />
             </div>
@@ -205,7 +205,7 @@ export function LoginPage() {
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="put your password here"
+                placeholder="••••••••"
                 className="w-full rounded-lg border border-slate-700 bg-slate-800 pl-3 pr-10 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500"
                 required
               />
