@@ -1,6 +1,13 @@
 import { PrismaClient, SourceType } from "@prisma/client";
+import crypto from "node:crypto";
 
 const prisma = new PrismaClient();
+
+function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
 
 const defaultSources = [
   {
@@ -59,6 +66,25 @@ async function main(): Promise<void> {
       create: source,
     });
   }
+
+  // Seed test reader
+  const readerId = "reader-test";
+  const readerName = "Test Reader";
+  const readerPassword = "admin123";
+  const readerPasswordHash = hashPassword(readerPassword);
+
+  await (prisma as any).reader.upsert({
+    where: { id: readerId },
+    update: {
+      name: readerName,
+      passwordHash: readerPasswordHash,
+    },
+    create: {
+      id: readerId,
+      name: readerName,
+      passwordHash: readerPasswordHash,
+    },
+  });
 }
 
 main()

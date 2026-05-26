@@ -41,12 +41,20 @@ function DashboardLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Protected({ children }: { children: React.ReactNode }) {
+function Protected({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute adminOnly={adminOnly}>
       <DashboardLayout>{children}</DashboardLayout>
     </ProtectedRoute>
   );
+}
+
+function RootRedirect() {
+  const { user } = useAuth();
+  if (user?.userType === "reader") {
+    return <Navigate to="/summaries" replace />;
+  }
+  return <Navigate to="/dashboard" replace />;
 }
 
 function AppRoutes() {
@@ -59,16 +67,16 @@ function AppRoutes() {
           path="/login"
           element={<LoginPage />}
         />
-        <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
+        <Route path="/dashboard" element={<Protected adminOnly={true}><DashboardPage /></Protected>} />
         <Route path="/clusters" element={<Protected><ClustersPage /></Protected>} />
         <Route path="/clusters/:id" element={<Protected><ClusterDetailPage /></Protected>} />
-        <Route path="/articles" element={<Protected><ArticlesListPage /></Protected>} />
+        <Route path="/articles" element={<Protected adminOnly={true}><ArticlesListPage /></Protected>} />
         <Route path="/articles/:id" element={<Protected><ArticleDetailPage /></Protected>} />
         <Route path="/summaries" element={<Protected><SummariesPage /></Protected>} />
         <Route path="/sources" element={<Protected><SourcesPage /></Protected>} />
-        <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/settings" element={<Protected adminOnly={true}><SettingsPage /></Protected>} />
+        <Route path="/" element={<RootRedirect />} />
+        <Route path="*" element={<RootRedirect />} />
       </Routes>
       <ToastContainer />
     </>

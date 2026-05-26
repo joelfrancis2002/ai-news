@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAddReview, useCluster, usePublishCluster } from "../hooks/queries";
+import { useAuth } from "../context/AuthContext";
 
 export function ClusterDetailPage() {
   const { id = "" } = useParams<{ id: string }>();
   const { data: cluster, isLoading, isError } = useCluster(id);
   const reviewMutation = useAddReview(id);
   const publishMutation = usePublishCluster(id);
+  const { user } = useAuth();
+  const isReader = user?.userType === "reader";
   const [notes, setNotes] = useState("");
 
   if (isLoading) {
@@ -65,43 +68,45 @@ export function ClusterDetailPage() {
           </section>
         ) : null}
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-64 flex-1">
-              <label className="mb-1.5 block text-xs font-medium text-slate-400">
-                Review notes
-              </label>
-              <textarea
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                rows={3}
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-blue-500"
-                placeholder="Why is this cluster approved or rejected?"
-              />
+        {!isReader && (
+          <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-64 flex-1">
+                <label className="mb-1.5 block text-xs font-medium text-slate-400">
+                  Review notes
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-blue-500"
+                  placeholder="Why is this cluster approved or rejected?"
+                />
+              </div>
+              <button
+                onClick={() => reviewMutation.mutate({ decision: "approve", notes })}
+                disabled={reviewMutation.isPending}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                Approve
+              </button>
+              <button
+                onClick={() => reviewMutation.mutate({ decision: "reject", notes })}
+                disabled={reviewMutation.isPending}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                Reject
+              </button>
+              <button
+                onClick={() => publishMutation.mutate(undefined)}
+                disabled={!canPublish || publishMutation.isPending}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {cluster.published ? "Published" : "Publish"}
+              </button>
             </div>
-            <button
-              onClick={() => reviewMutation.mutate({ decision: "approve", notes })}
-              disabled={reviewMutation.isPending}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            >
-              Approve
-            </button>
-            <button
-              onClick={() => reviewMutation.mutate({ decision: "reject", notes })}
-              disabled={reviewMutation.isPending}
-              className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            >
-              Reject
-            </button>
-            <button
-              onClick={() => publishMutation.mutate(undefined)}
-              disabled={!canPublish || publishMutation.isPending}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            >
-              {cluster.published ? "Published" : "Publish"}
-            </button>
-          </div>
-        </section>
+          </section>
+        )}
 
         <section className="rounded-xl border border-slate-800 bg-slate-900/60">
           <div className="border-b border-slate-800 px-5 py-4">

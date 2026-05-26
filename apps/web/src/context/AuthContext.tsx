@@ -6,6 +6,8 @@ type AuthUser = {
   id: string;
   email: string;
   name: string;
+  role: string;
+  userType: "admin" | "reader";
 };
 
 type AuthState = {
@@ -81,52 +83,52 @@ type AuthContextValue = {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string, loginType: "admin" | "reader") => Promise<boolean>;
   logout: () => Promise<void>;
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const [state, dispatch] = useReducer(authReducer, initialState);
+  
+  // Shift line numbers offset
+  const hydrate = useCallback(async (active: boolean) => {
+    dispatch({ type: "HYDRATE_START" });
+    const token = getStoredToken();
+    if (!token) {
+      dispatch({ type: "HYDRATE_FAILURE" });
+      return;
+    }
 
-  useEffect(() => {
-    let active = true;
-
-    async function hydrate() {
-      dispatch({ type: "HYDRATE_START" });
-      const token = getStoredToken();
-      if (!token) {
-        dispatch({ type: "HYDRATE_FAILURE" });
+    try {
+      const response = await apiClient.get<{ user: AuthUser }>("/auth/me");
+      if (!active) {
         return;
       }
 
-      try {
-        const response = await apiClient.get<{ user: AuthUser }>("/auth/me");
-        if (!active) {
-          return;
-        }
-
-        const activeToken = getStoredToken() ?? token;
-        dispatch({ type: "HYDRATE_SUCCESS", payload: { token: activeToken, user: response.user } });
-      } catch {
-        if (!active) {
-          return;
-        }
-        clearStoredAuth();
-        dispatch({ type: "HYDRATE_FAILURE" });
+      const activeToken = getStoredToken() ?? token;
+      dispatch({ type: "HYDRATE_SUCCESS", payload: { token: activeToken, user: response.user } });
+    } catch {
+      if (!active) {
+        return;
       }
+      clearStoredAuth();
+      dispatch({ type: "HYDRATE_FAILURE" });
     }
+  }, []);
 
-    hydrate();
+  useEffect(() => {
+    let active = true;
+    void hydrate(active);
     return () => {
       active = false;
     };
-  }, []);
+  }, [hydrate]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const response = await apiClient.post<{ token: string; refreshToken: string; user: AuthUser }, { email: string; password: string }>(
+  const login = useCallback(async (email: string, password: string, loginType: "admin" | "reader") => {
+    const response = await apiClient.post<{ token: string; refreshToken: string; user: AuthUser }, { email: string; password: string; loginType: "admin" | "reader" }>(
       "/auth/login",
-      { email, password },
+      { email, password, loginType },
     );
 
     setStoredTokens(response.token, response.refreshToken);

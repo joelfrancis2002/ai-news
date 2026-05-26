@@ -196,3 +196,11 @@ model PublishedArticle {
   @@index([slug])
   @@index([publishedAt])
 }
+
+model Reader {
+  id           String   @id // User enters this ID directly to log in
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

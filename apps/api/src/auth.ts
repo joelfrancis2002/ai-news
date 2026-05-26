@@ -71,7 +71,8 @@ export function verifyPassword(password: string, storedHash: string): boolean {
 
 export interface JwtPayload {
   userId: string;
-  email: string;
+  email?: string;
+  userType: "admin" | "reader";
   role: string;
 }
 
@@ -95,15 +96,15 @@ export function verifyAuthToken(token: string): JwtPayload | null {
   }
 }
 
-export function issueRefreshToken(payload: { userId: string }): string {
+export function issueRefreshToken(payload: { userId: string; userType: "admin" | "reader" }): string {
   return jwt.sign(payload, authSecret(), {
     expiresIn: REFRESH_TOKEN_TTL_SECONDS,
   });
 }
 
-export function verifyRefreshToken(token: string): { userId: string } | null {
+export function verifyRefreshToken(token: string): { userId: string; userType: "admin" | "reader" } | null {
   try {
-    return jwt.verify(token, authSecret()) as { userId: string };
+    return jwt.verify(token, authSecret()) as { userId: string; userType: "admin" | "reader" };
   } catch {
     return null;
   }
@@ -123,4 +124,14 @@ export async function requireAuth(request: FastifyRequest, _reply: FastifyReply)
   }
 
   request.user = payload;
+}
+
+export async function requireAdminOrEditor(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (!request.user) {
+    await requireAuth(request, reply);
+  }
+  
+  if (request.user.userType !== "admin" || (request.user.role !== "ADMIN" && request.user.role !== "EDITOR")) {
+    throw request.server.httpErrors.forbidden("Forbidden: Admin or Editor access required");
+  }
 }

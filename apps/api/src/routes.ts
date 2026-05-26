@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "@sinclair/typebox";
 import { Prisma } from "@prisma/client";
 // import { getQueueStats } from "@ai-newsroom/workers/queues";
-import { getAdminBootstrapCredentials, hashPassword, issueAuthToken, issueRefreshToken, verifyRefreshToken, requireAuth, verifyPassword } from "./auth.js";
+import { getAdminBootstrapCredentials, hashPassword, issueAuthToken, issueRefreshToken, verifyRefreshToken, requireAuth, verifyPassword, requireAdminOrEditor } from "./auth.js";
 
 const ArticleStatusEnum = Type.Union([
   Type.Literal("fetched"),
@@ -568,7 +568,9 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
     {
       schema: {
         body: Type.Object({
-          email: Type.String({ format: "email" }),
+          loginType: Type.Union([Type.Literal("admin"), Type.Literal("reader")]),
+          email: Type.Optional(Type.String()),
+          id: Type.Optional(Type.String()),
           password: Type.String({ minLength: 1 }),
         }),
         response: {
@@ -577,7 +579,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
             refreshToken: Type.String(),
             user: Type.Object({
               id: Type.String(),
-              email: Type.String(),
+              email: Type.Optional(Type.String()),
               name: Type.String(),
               role: Type.String(),
             }),
@@ -594,66 +596,154 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
       // This env var must be explicitly set to "true" to enable bootstrap mode.
       // In production, this should NEVER be true. Remove or unset it after first setup.
       // ─────────────────────────────────────────────────────────────────────────────
-      let user = await prisma.user.findUnique({
-        where: { email: request.body.email },
-      });
+      const { loginType, email, id, password } = request.body;
 
-      if (!user) {
-        const userCount = await prisma.user.count();
-        if (userCount === 0) {
-          if (process.env.ALLOW_FIRST_USER_BOOTSTRAP !== "true") {
-            return reply.status(403).send({
-              error:
-                "No users exist in the system. Please create the first admin user " +
-                "via database seed or set ALLOW_FIRST_USER_BOOTSTRAP=true in your environment.",
+      if (loginType === "admin") {
+        if (!email) {
+          throw fastify.httpErrors.badRequest("Email is required for admin login");
+        }
+
+        let user = await prisma.user.findUnique({
+          where: { email },
+        });
+
+        if (!user) {
+          const userCount = await prisma.user.count();
+          if (userCount === 0) {
+            if (process.env.ALLOW_FIRST_USER_BOOTSTRAP !== "true") {
+              return reply.status(403).send({
+                error:
+                  "No users exist in the system. Please create the first admin user " +
+                  "via database seed or set ALLOW_FIRST_USER_BOOTSTRAP=true in your environment.",
+              });
+            }
+
+            request.log.warn(
+              "⚠️  [BOOTSTRAP] Auto-creating first admin user. " +
+              "Remove ALLOW_FIRST_USER_BOOTSTRAP from your environment after setup.",
+            );
+
+            const { email: bootEmail, password: bootPassword, name: bootName } = getAdminBootstrapCredentials();
+            user = await prisma.user.create({
+              data: {
+                email: bootEmail,
+                passwordHash: hashPassword(bootPassword),
+                name: bootName,
+                role: "ADMIN",
+              },
             });
           }
-
-          request.log.warn(
-            "⚠️  [BOOTSTRAP] Auto-creating first admin user. " +
-            "Remove ALLOW_FIRST_USER_BOOTSTRAP from your environment after setup.",
-          );
-
-          const { email, password, name } = getAdminBootstrapCredentials();
-          user = await prisma.user.create({
-            data: {
-              email,
-              passwordHash: hashPassword(password),
-              name,
-              role: "ADMIN",
-            },
-          });
         }
+
+        if (!user || !verifyPassword(password, user.passwordHash)) {
+          throw fastify.httpErrors.unauthorized("Invalid credentials");
+        }
+
+        const token = issueAuthToken({ userId: user.id, email: user.email, userType: "admin", role: user.role });
+        const refreshToken = issueRefreshToken({ userId: user.id, userType: "admin" });
+
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+
+        await prisma.refreshToken.create({
+          data: {
+            token: refreshToken,
+            userId: user.id,
+            expiresAt,
+          },
+        });
+
+        return {
+          token,
+          refreshToken,
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+          },
+        };
+      } else if (loginType === "reader") {
+        if (!id) {
+          throw fastify.httpErrors.badRequest("Reader ID is required for reader login");
+        }
+
+        const reader = await prisma.reader.findUnique({
+          where: { id },
+        });
+
+        if (!reader || !verifyPassword(password, reader.passwordHash)) {
+          throw fastify.httpErrors.unauthorized("Invalid credentials");
+        }
+
+        const token = issueAuthToken({ userId: reader.id, userType: "reader", role: "READER" });
+        const refreshToken = issueRefreshToken({ userId: reader.id, userType: "reader" });
+
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+
+        await prisma.refreshToken.create({
+          data: {
+            token: refreshToken,
+            userId: reader.id,
+            expiresAt,
+          },
+        });
+
+        return {
+          token,
+          refreshToken,
+          user: {
+            id: reader.id,
+            name: reader.name,
+            role: "READER",
+          },
+        };
+      } else {
+        throw fastify.httpErrors.badRequest("Invalid loginType");
+      }
+    },
+  );
+
+  fastify.post(
+    "/auth/register",
+    {
+      schema: {
+        body: Type.Object({
+          id: Type.String({ minLength: 3 }),
+          name: Type.String({ minLength: 1 }),
+          password: Type.String({ minLength: 6 }),
+        }),
+        response: {
+          201: Type.Object({
+            success: Type.Boolean(),
+            message: Type.String(),
+          }),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id, name, password } = request.body;
+
+      const existing = await prisma.reader.findUnique({
+        where: { id },
+      });
+      if (existing) {
+        throw fastify.httpErrors.conflict("User ID is already taken");
       }
 
-      if (!user || !verifyPassword(request.body.password, user.passwordHash)) {
-        throw fastify.httpErrors.unauthorized("Invalid credentials");
-      }
-
-      const token = issueAuthToken({ userId: user.id, email: user.email, role: user.role });
-      const refreshToken = issueRefreshToken({ userId: user.id });
-
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7);
-
-      await prisma.refreshToken.create({
+      await prisma.reader.create({
         data: {
-          token: refreshToken,
-          userId: user.id,
-          expiresAt,
+          id,
+          name,
+          passwordHash: hashPassword(password),
         },
       });
 
-      return {
-        token,
-        refreshToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-        },
-      };
+      return reply.code(201).send({
+        success: true,
+        message: "Reader account registered successfully",
+      });
     },
   );
 
@@ -666,7 +756,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
           200: Type.Object({
             user: Type.Object({
               id: Type.String(),
-              email: Type.String(),
+              email: Type.Optional(Type.String()),
               name: Type.String(),
               role: Type.String(),
             }),
@@ -675,16 +765,35 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
       },
     },
     async (request) => {
-      const user = await prisma.user.findUnique({
-        where: { id: request.user.userId },
-        select: { id: true, email: true, name: true, role: true },
-      });
+      if (request.user.userType === "admin") {
+        const user = await prisma.user.findUnique({
+          where: { id: request.user.userId },
+          select: { id: true, email: true, name: true, role: true },
+        });
 
-      if (!user) {
-        throw fastify.httpErrors.unauthorized("User not found");
+        if (!user) {
+          throw fastify.httpErrors.unauthorized("User not found");
+        }
+
+        return { user };
+      } else {
+        const reader = await prisma.reader.findUnique({
+          where: { id: request.user.userId },
+          select: { id: true, name: true },
+        });
+
+        if (!reader) {
+          throw fastify.httpErrors.unauthorized("Reader not found");
+        }
+
+        return {
+          user: {
+            id: reader.id,
+            name: reader.name,
+            role: "READER",
+          },
+        };
       }
-
-      return { user };
     },
   );
 
@@ -742,32 +851,61 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
         throw fastify.httpErrors.unauthorized("Invalid or expired refresh token");
       }
 
-      const user = await prisma.user.findUnique({
-        where: { id: payload.userId },
-      });
+      if (payload.userType === "admin") {
+        const user = await prisma.user.findUnique({
+          where: { id: payload.userId },
+        });
 
-      if (!user) {
-        throw fastify.httpErrors.unauthorized("User not found");
+        if (!user) {
+          throw fastify.httpErrors.unauthorized("User not found");
+        }
+
+        // Rotate tokens
+        await prisma.refreshToken.delete({ where: { id: storedToken.id } }).catch(() => {});
+
+        const token = issueAuthToken({ userId: user.id, email: user.email, userType: "admin", role: user.role });
+        const refreshToken = issueRefreshToken({ userId: user.id, userType: "admin" });
+
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+
+        await prisma.refreshToken.create({
+          data: {
+            token: refreshToken,
+            userId: user.id,
+            expiresAt,
+          },
+        });
+
+        return { token, refreshToken };
+      } else {
+        const reader = await prisma.reader.findUnique({
+          where: { id: payload.userId },
+        });
+
+        if (!reader) {
+          throw fastify.httpErrors.unauthorized("Reader not found");
+        }
+
+        // Rotate tokens
+        await prisma.refreshToken.delete({ where: { id: storedToken.id } }).catch(() => {});
+
+        const token = issueAuthToken({ userId: reader.id, userType: "reader", role: "READER" });
+        const refreshToken = issueRefreshToken({ userId: reader.id, userType: "reader" });
+
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+
+        await prisma.refreshToken.create({
+          data: {
+            token: refreshToken,
+            userId: reader.id,
+            expiresAt,
+          },
+        });
+
+        return { token, refreshToken };
       }
-
-      // Rotate tokens
-      await prisma.refreshToken.delete({ where: { id: storedToken.id } }).catch(() => {});
-
-      const token = issueAuthToken({ userId: user.id, email: user.email, role: user.role });
-      const refreshToken = issueRefreshToken({ userId: user.id });
-
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7);
-
-      await prisma.refreshToken.create({
-        data: {
-          token: refreshToken,
-          userId: user.id,
-          expiresAt,
-        },
-      });
-
-      return { token, refreshToken };
     },
   );
 
@@ -824,7 +962,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.post(
     "/sources",
     {
-      preHandler: requireAuth,
+      preHandler: requireAdminOrEditor,
       schema: {
         body: Type.Object({
           name: Type.String({ minLength: 1 }),
@@ -858,7 +996,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.patch(
     "/sources/:id",
     {
-      preHandler: requireAuth,
+      preHandler: requireAdminOrEditor,
       schema: {
         params: UuidParam,
         body: Type.Object({
@@ -892,7 +1030,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.delete(
     "/sources/:id",
     {
-      preHandler: requireAuth,
+      preHandler: requireAdminOrEditor,
       schema: {
         params: UuidParam,
         response: {
@@ -988,7 +1126,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.patch(
     "/articles/:id/status",
     {
-      preHandler: requireAuth,
+      preHandler: requireAdminOrEditor,
       schema: {
         params: UuidParam,
         body: Type.Object({
@@ -1157,7 +1295,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.post(
     "/clusters/:id/reviews",
     {
-      preHandler: requireAuth,
+      preHandler: requireAdminOrEditor,
       schema: {
         params: UuidParam,
         body: Type.Object({
@@ -1237,7 +1375,7 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.post(
     "/clusters/:id/publish",
     {
-      preHandler: requireAuth,
+      preHandler: requireAdminOrEditor,
       schema: {
         params: UuidParam,
         body: Type.Optional(
