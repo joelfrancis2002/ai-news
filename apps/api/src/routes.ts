@@ -599,12 +599,13 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
       const { loginType, email, id, password } = request.body;
 
       if (loginType === "admin") {
-        if (!email) {
+        const adminEmail = email || id;
+        if (!adminEmail) {
           throw fastify.httpErrors.badRequest("Email is required for admin login");
         }
 
         let user = await prisma.user.findUnique({
-          where: { email },
+          where: { email: adminEmail },
         });
 
         if (!user) {
@@ -664,12 +665,13 @@ const routes: FastifyPluginAsyncTypebox = async (fastify) => {
           },
         };
       } else if (loginType === "reader") {
-        if (!id) {
+        const readerId = id || email;
+        if (!readerId) {
           throw fastify.httpErrors.badRequest("Reader ID is required for reader login");
         }
 
         const reader = await prisma.reader.findUnique({
-          where: { id },
+          where: { id: readerId },
         });
 
         if (!reader || !verifyPassword(password, reader.passwordHash)) {

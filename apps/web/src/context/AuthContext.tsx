@@ -83,7 +83,7 @@ type AuthContextValue = {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string, loginType: "admin" | "reader") => Promise<boolean>;
+  login: (emailOrId: string, password: string, loginType: "admin" | "reader") => Promise<boolean>;
   logout: () => Promise<void>;
 };
 
@@ -125,10 +125,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [hydrate]);
 
-  const login = useCallback(async (email: string, password: string, loginType: "admin" | "reader") => {
-    const response = await apiClient.post<{ token: string; refreshToken: string; user: AuthUser }, { email: string; password: string; loginType: "admin" | "reader" }>(
+  const login = useCallback(async (emailOrId: string, password: string, loginType: "admin" | "reader") => {
+    const payload = loginType === "admin"
+      ? { email: emailOrId, password, loginType }
+      : { id: emailOrId, password, loginType };
+
+    const response = await apiClient.post<{ token: string; refreshToken: string; user: AuthUser }, any>(
       "/auth/login",
-      { email, password, loginType },
+      payload,
     );
 
     setStoredTokens(response.token, response.refreshToken);
