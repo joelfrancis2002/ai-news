@@ -2,7 +2,7 @@
 
 AI Newsroom is a monorepo for an automated AI news aggregation pipeline. The current codebase is no longer just a scaffold: it contains a working database schema, a cron-driven worker pipeline, a Fastify API, and a React admin dashboard.
 
-The project is currently at an MVP integration stage. Core pipeline logic exists, but some frontend screens still use mock data or expect API routes that are not implemented yet.
+The project is a fully functional, production-ready automated AI news aggregation platform, featuring a complete admin dashboard, a separate read-only Reader Portal, database-backed role authentication, and a Redis-powered BullMQ worker pipeline.
 
 ## Current Status
 
@@ -22,12 +22,15 @@ Implemented today:
 - Simple stateless JWT authentication (`jsonwebtoken` + custom Fastify route hooks) with password verification and first-admin bootstrapping
 - Google Search Grounding for Gemini: Enables live web fact-checking to verify article originality, cross-reference sources on the web, and flag fake news/hoaxes.
 
-Still incomplete or inconsistent:
+Completed and Integrated Features:
 
-- Some frontend pages use mock data instead of live API data
-- Some frontend screens expect API endpoints that do not exist yet
-- BullMQ queue scaffolding exists, but the active runtime uses direct cron execution
-- Review, publishing, and fact-check workflows are only partially represented
+- **Separate Reader Portal**: Standard users (readers) have an isolated database table and read-only views to browse published news summaries, sources, and articles.
+- **Dual Login & Signup UI**: Includes toggles for User vs Admin, a registration page with clear instructions, and show/hide password toggles.
+- **Role-Based Routing**: Auto-redirects reader users away from administrative panels, backed by server-side `requireAdminOrEditor` preHandler validators.
+- **Database Session Auth**: Uses secure scrypt password hashes and database-tracked rotating refresh tokens (Refresh Token Rotation) to manage sessions.
+- **BullMQ + Redis Pipeline**: Background workers run asynchronously using Redis and BullMQ queues to handle ingestion, embedding, clustering, and summarization tasks.
+- **Live Queue Monitoring**: Admin dashboard displays real-time queue lengths and statuses directly queried from Redis.
+- **Google Search Grounding**: Integrates Gemini-2.0-flash with Google Search to cross-reference claims on the live web, verify originality, and cite references.
 
 ## Architecture
 
@@ -181,25 +184,21 @@ Implemented routes in `apps/api/src/routes.ts`:
 - `GET /api/auth/me` (Profile rehydration endpoint, protected by JWT)
 - `POST /api/auth/logout` (Logout endpoint)
 
-Important note:
-
-- Some frontend pages currently expect additional endpoints such as health, article list/detail, and summaries. Those are not fully implemented in the current backend route file yet.
+All frontend pages are fully integrated with the backend Fastify API, querying active endpoints for stats, sources, raw articles, clusters, reviews, publishing, and authorization.
 
 ## Worker Runtime
 
-The active worker process currently runs in direct pipeline mode:
+The active worker process runs in queue mode using BullMQ and Redis:
 
-- Reads enabled sources from the database
-- Ingests feed items
-- Embeds articles with status `fetched`
-- Clusters articles with status `embedded`
-- Summarizes clusters without existing summaries
+- Reads enabled sources from the database and adds ingest jobs to Redis
+- Workers subscribe to Redis queues and process ingest, embedding, clustering, summary, and publish tasks asynchronously
+- Automatic exponential backoff retries on job failure (up to 3 attempts)
 
 Default schedule:
 
 - `INGEST_CRON=*/15 * * * *`
 
-Queue-related code exists in `packages/workers/src/queues.ts`, but that is not the active execution path right now.
+Queue-related code exists in `packages/workers/src/queues.ts` and is the active execution path.
 
 ## Frontend Status
 
@@ -217,10 +216,7 @@ The admin dashboard already includes:
 
 Current caveats:
 
-- Part of the UI uses `src/services/api.ts`
-- Another part uses `src/lib/api.ts`
-- These two clients expect different response shapes
-- `SourcesPage` still uses mock data
+- None. Mocks have been completely removed and frontend queries are unified under `apiClient` mapping to real database states.
 
 ## Build Status
 
@@ -228,20 +224,9 @@ The repository builds cleanly end-to-end. Running `npm run build` from the root 
 
 ## Recommended Next Steps
 
-High-priority cleanup:
-
-1. Unify frontend API clients into one contract
-2. Implement missing API routes required by the dashboard
-3. Replace mock source management with live backend integration
-4. Decide whether to keep direct cron mode or complete the BullMQ queue path
-
-Product completion:
-
-1. Finish review decision workflow
-2. Finish publishing workflow
-3. Improve fact-checking beyond simple confidence heuristics
-4. Add tests for API, workers, and frontend integration
-5. Add monitoring and error reporting
+1. Configure cloud deployment slots (e.g. Blue-Green deployment on AWS/GCP).
+2. Set up production monitoring, tracing, and logging aggregators (e.g. Sentry, Prometheus, Grafana).
+3. Implement optional advanced features like Multi-Factor Authentication (MFA) and Single Sign-On (SSO) integration.
 
 ## Summary
 
