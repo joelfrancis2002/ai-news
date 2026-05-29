@@ -222,11 +222,28 @@ Current caveats:
 
 The repository builds cleanly end-to-end. Running `npm run build` from the root workspace compiles all packages and apps (shared, database, workers, ai, api, web) sequentially without any TypeScript errors.
 
+## Deployment & Cloud Architecture
+
+The codebase is fully prepared for multi-environment cloud deployment:
+- **Local Development**: Runs out-of-the-box with SQLite (`dev.db`) and local BullMQ workers.
+- **PaaS Deployment (Render / Railway)**: Simple Dockerized setup using PostgreSQL and managed Redis.
+- **AWS Serverless & Container Stack (Cost-Optimized)**: A custom blueprint is designed for deployment using:
+  - **React Frontend**: AWS S3 + CloudFront CDN.
+  - **Fastify API**: AWS Lambda + API Gateway.
+  - **Background Workers**: AWS ECS Fargate task (runs 24/7).
+  - **Database**: PostgreSQL on Amazon RDS (t4g.micro - Free Tier eligible).
+  - **Queue**: Upstash Serverless Redis (Free Tier).
+  - **Networking**: Configured in a cost-optimized layout to bypass expensive NAT Gateway charges, allowing deployment for just **$9 to $25/month** (highly suitable for startup budgets).
+
+Detailed guides are saved in the project's workspace:
+- Complete Architecture & PaaS Guide: [deployment_and_architecture_guide.md](file:///C:/Users/7415/.gemini/antigravity/brain/d8daa7da-b5c7-494d-ba0b-9bb9585308fe/deployment_and_architecture_guide.md)
+- Detailed AWS Setup & Cost Blueprint: [aws_deployment_plan.md](file:///C:/Users/7415/.gemini/antigravity/brain/d8daa7da-b5c7-494d-ba0b-9bb9585308fe/aws_deployment_plan.md)
+
 ## Recommended Next Steps
 
-1. Configure cloud deployment slots (e.g. Blue-Green deployment on AWS/GCP).
-2. Set up production monitoring, tracing, and logging aggregators (e.g. Sentry, Prometheus, Grafana).
-3. Implement optional advanced features like Multi-Factor Authentication (MFA) and Single Sign-On (SSO) integration.
+1. Deploy the React Web frontend to Vercel/Netlify for fast static hosting.
+2. Set up the production PostgreSQL and Redis databases on Railway, AWS, or Supabase.
+3. Deploy the Fastify API and background workers using the AWS Serverless template or Railway containers.
 
 ## Summary
 
